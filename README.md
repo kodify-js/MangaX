@@ -1,4 +1,4 @@
-# moviex
+# mangax
 
 A new Flutter project.
 
