@@ -5,6 +5,29 @@ import 'package:http/http.dart' as http;
 class Api {
   Api();
 
+  // Rate limiting variables
+  static DateTime? _lastSearchRequestTime;
+  static const Duration _minSearchInterval = Duration(
+    milliseconds: 1000,
+  ); // 1 second between search requests
+
+  // Rate limiting method for search requests
+  Future<void> _throttleSearchRequest() async {
+    if (_lastSearchRequestTime != null) {
+      final timeSinceLastRequest = DateTime.now().difference(
+        _lastSearchRequestTime!,
+      );
+      if (timeSinceLastRequest < _minSearchInterval) {
+        final waitTime = _minSearchInterval - timeSinceLastRequest;
+        print(
+          "Throttling search request, waiting ${waitTime.inMilliseconds}ms",
+        );
+        await Future.delayed(waitTime);
+      }
+    }
+    _lastSearchRequestTime = DateTime.now();
+  }
+
   List<MangaClass> parseMangaData(List media) {
     List<MangaClass> result = [];
     for (var item in media) {
@@ -162,6 +185,38 @@ class Api {
     }
   }
 
+  Future<List<MangaClass>> getWebNovels({
+    int page = 1,
+    int perpage = 5,
+    String? sort,
+    String? source,
+  }) async {
+    var query =
+        'query (\$page: Int, \$size: Int, \$type: MediaType, \$source: MediaSource, \$sort: [MediaSort] = [POPULARITY_DESC, SCORE_DESC]) {Page(page: \$page, perPage: \$size) {pageInfo {total perPage currentPage lastPage hasNextPage} media(type: \$type, source: \$source, sort: \$sort) {id idMal status(version: 2) title { userPreferred romaji english native } bannerImage popularity coverImage{extraLarge large medium color} episodes format season description seasonYear chapters volumes averageScore genres nextAiringEpisode {airingAt timeUntilAiring episode }}}}';
+    final variables = {
+      "page": page,
+      "size": perpage,
+      "type": "MANGA",
+      "source": source,
+      "sort": sort != null ? [sort] : ["POPULARITY_DESC", "SCORE_DESC"],
+    };
+    final response = await http.post(
+      Uri.parse("https://graphql.anilist.co"),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: jsonEncode({"query": query, "variables": variables}),
+    );
+    print("Response status: ${response.body}");
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return parseMangaData(data['data']['Page']['media']);
+    } else {
+      throw Exception("Failed to load web novels");
+    }
+  }
+
   Future<List<MangaClass>> searchManga({
     String? query,
     int page = 1,
@@ -180,8 +235,25 @@ class Api {
     List<String>? tags,
     List<String>? excludedTags,
   }) async {
-    var queryString =
-        'query (\$page:Int = 1 \$id:Int \$type:MediaType \$isAdult:Boolean = false \$search:String \$format:[MediaFormat]\$status:MediaStatus \$countryOfOrigin:CountryCode \$source:MediaSource \$season:MediaSeason \$seasonYear:Int \$year:String \$onList:Boolean \$yearLesser:FuzzyDateInt \$yearGreater:FuzzyDateInt \$episodeLesser:Int \$episodeGreater:Int \$durationLesser:Int \$durationGreater:Int \$chapterLesser:Int \$chapterGreater:Int \$volumeLesser:Int \$size:Int \$volumeGreater:Int \$licensedBy:[Int]\$isLicensed:Boolean \$genres:[String]\$excludedGenres:[String]\$tags:[String]\$excludedTags:[String]\$minimumTagRank:Int \$sort:[MediaSort]=[POPULARITY_DESC,SCORE_DESC]) {Page(page: \$page, perPage: \$size) {pageInfo {total perPage currentPage lastPage hasNextPage}media(id:\$id type:\$type season:\$season format_in:\$format status:\$status countryOfOrigin:\$countryOfOrigin source:\$source search:\$search onList:\$onList seasonYear:\$seasonYear startDate_like:\$year startDate_lesser:\$yearLesser startDate_greater:\$yearGreater episodes_lesser:\$episodeLesser episodes_greater:\$episodeGreater duration_lesser:\$durationLesser duration_greater:\$durationGreater chapters_lesser:\$chapterLesser chapters_greater:\$chapterGreater volumes_lesser:\$volumeLesser volumes_greater:\$volumeGreater licensedById_in:\$licensedBy isLicensed:\$isLicensed genre_in:\$genres genre_not_in:\$excludedGenres tag_in:\$tags tag_not_in:\$excludedTags minimumTagRank:\$minimumTagRank sort:\$sort isAdult:\$isAdult) {id idMal status(version: 2) title { userPreferred romaji english native }bannerImage popularity coverImage{extraLarge large medium color}episodes format season description  seasonYear chapters volumes averageScore genres nextAiringEpisode {airingAt timeUntilAiring episode }  } }}';
+    // Apply rate limiting specifically for search requests
+    await _throttleSearchRequest();
+
+    // Build dynamic query variables and parameters based on what's provided
+    List<String> queryParams = [
+      '\$page: Int = 1',
+      '\$size: Int',
+      '\$type: MediaType',
+      '\$isAdult: Boolean = false',
+      '\$sort: [MediaSort] = [POPULARITY_DESC, SCORE_DESC]',
+    ];
+
+    List<String> mediaParams = [
+      'page: \$page',
+      'perPage: \$size',
+      'type: \$type',
+      'isAdult: \$isAdult',
+      'sort: \$sort',
+    ];
 
     Map<String, dynamic> variables = {
       "page": page,
@@ -191,84 +263,203 @@ class Api {
     };
 
     if (query != null && query.isNotEmpty) {
+      queryParams.add('\$search: String');
+      mediaParams.add('search: \$search');
       variables["search"] = query;
     }
 
-    if (sort != null && sort.isNotEmpty) {
-      variables["sort"] = sort;
-    } else {
-      variables["sort"] = ["POPULARITY_DESC", "SCORE_DESC"]; // default sort
-    }
-
     if (source != null && source.isNotEmpty) {
+      queryParams.add('\$source: MediaSource');
+      mediaParams.add('source: \$source');
       variables["source"] = source;
     }
 
     if (format != null && format.isNotEmpty) {
+      queryParams.add('\$format: [MediaFormat]');
+      mediaParams.add('format_in: \$format');
       variables["format"] = format;
     }
 
     if (genre != null && genre.isNotEmpty) {
+      queryParams.add('\$genres: [String]');
+      mediaParams.add('genre_in: \$genres');
       variables["genres"] = genre;
     }
 
     if (excludedGenres != null && excludedGenres.isNotEmpty) {
+      queryParams.add('\$excludedGenres: [String]');
+      mediaParams.add('genre_not_in: \$excludedGenres');
       variables["excludedGenres"] = excludedGenres;
     }
 
     if (status != null && status.isNotEmpty) {
+      queryParams.add('\$status: MediaStatus');
+      mediaParams.add('status: \$status');
       variables["status"] = status;
     }
 
     if (countryOfOrigin != null && countryOfOrigin.isNotEmpty) {
+      queryParams.add('\$countryOfOrigin: CountryCode');
+      mediaParams.add('countryOfOrigin: \$countryOfOrigin');
       variables["countryOfOrigin"] = countryOfOrigin;
     }
 
     if (seasonYear != null) {
+      queryParams.add('\$seasonYear: Int');
+      mediaParams.add('seasonYear: \$seasonYear');
       variables["seasonYear"] = seasonYear;
     }
 
     if (season != null && season.isNotEmpty) {
+      queryParams.add('\$season: MediaSeason');
+      mediaParams.add('season: \$season');
       variables["season"] = season;
     }
 
     if (isLicensed != null) {
+      queryParams.add('\$isLicensed: Boolean');
+      mediaParams.add('isLicensed: \$isLicensed');
       variables["isLicensed"] = isLicensed;
     }
 
     if (tags != null && tags.isNotEmpty) {
+      queryParams.add('\$tags: [String]');
+      mediaParams.add('tag_in: \$tags');
       variables["tags"] = tags;
     }
 
     if (excludedTags != null && excludedTags.isNotEmpty) {
+      queryParams.add('\$excludedTags: [String]');
+      mediaParams.add('tag_not_in: \$excludedTags');
       variables["excludedTags"] = excludedTags;
     }
 
-    print("Searching manga with variables: $variables");
-
-    final response = await http.post(
-      Uri.parse("https://graphql.anilist.co"),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({"query": queryString, "variables": variables}),
-    );
-
-    print("Response status: ${response.statusCode}");
-    print("Response body: ${response.body}");
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-
-      // Check for GraphQL errors
-      if (data['errors'] != null) {
-        throw Exception("GraphQL Error: ${data['errors']}");
-      }
-
-      return parseMangaData(data['data']['Page']['media']);
+    if (sort != null && sort.isNotEmpty) {
+      variables["sort"] = [sort];
     } else {
-      throw Exception("Failed to search manga: ${response.statusCode}");
+      variables["sort"] = ["POPULARITY_DESC", "SCORE_DESC"];
     }
+
+    // Build the dynamic query string
+    var queryString = '''
+      query (${queryParams.join(', ')}) {
+        Page(page: \$page, perPage: \$size) {
+          pageInfo {
+            total
+            perPage
+            currentPage
+            lastPage
+            hasNextPage
+          }
+          media(${mediaParams.join(', ')}) {
+            id
+            idMal
+            status(version: 2)
+            title {
+              userPreferred
+              romaji
+              english
+              native
+            }
+            bannerImage
+            popularity
+            coverImage {
+              extraLarge
+              large
+              medium
+              color
+            }
+            episodes
+            format
+            season
+            description
+            seasonYear
+            chapters
+            volumes
+            averageScore
+            genres
+            nextAiringEpisode {
+              airingAt
+              timeUntilAiring
+              episode
+            }
+          }
+        }
+      }
+    ''';
+
+    print("Generated query: $queryString");
+
+    int retryCount = 0;
+    const maxRetries = 3;
+
+    while (retryCount < maxRetries) {
+      try {
+        final response = await http
+            .post(
+              Uri.parse("https://graphql.anilist.co"),
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode({"query": queryString, "variables": variables}),
+            )
+            .timeout(Duration(seconds: 30));
+
+        print("Response body: ${response.body}");
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+
+          // Check for GraphQL errors
+          if (data['errors'] != null) {
+            print("GraphQL Error: ${data['errors']}");
+            throw Exception("GraphQL Error: ${data['errors']}");
+          }
+
+          return parseMangaData(data['data']['Page']['media']);
+        } else if (response.statusCode == 429) {
+          // Rate limited - wait and retry
+          retryCount++;
+          final waitTime = Duration(seconds: retryCount * 3); // 3s, 6s, 9s
+          print(
+            "Rate limited (429), waiting ${waitTime.inSeconds} seconds before retry $retryCount/$maxRetries",
+          );
+          await Future.delayed(waitTime);
+          continue;
+        } else if (response.statusCode >= 500) {
+          // Server error - retry
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw Exception(
+              "Server error after $maxRetries retries: ${response.statusCode}",
+            );
+          }
+          print(
+            "Server error (${response.statusCode}), retrying in ${retryCount * 2} seconds",
+          );
+          await Future.delayed(Duration(seconds: retryCount * 2));
+          continue;
+        } else {
+          print("Response body: ${response.body}");
+          throw Exception("Failed to search manga: ${response.statusCode}");
+        }
+      } catch (e) {
+        if (e.toString().contains('TimeoutException')) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw Exception("Request timeout after $maxRetries retries");
+          }
+          print("Request timeout, retrying in ${retryCount * 2} seconds");
+          await Future.delayed(Duration(seconds: retryCount * 2));
+          continue;
+        } else {
+          // Re-throw other errors immediately
+          throw e;
+        }
+      }
+    }
+
+    throw Exception("Max retries exceeded");
   }
 }

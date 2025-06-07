@@ -20,7 +20,7 @@ class _SearchPageState extends State<SearchPage> {
   bool isLoadingMore = false;
   bool hasMoreData = true;
   int currentPage = 1;
-  final int itemsPerPage = 20;
+  final int itemsPerPage = 10;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -877,9 +877,9 @@ class _SearchPageState extends State<SearchPage> {
                             SizedBox(
                               height: 200,
                               child: FutureBuilder(
-                                future: Api().searchManga(
+                                future: Api().getWebNovels(
                                   page: 1,
-                                  perPage: 20,
+                                  perpage: 10,
                                   source: "WEB_NOVEL",
                                 ),
                                 builder: (context, snapshot) {
@@ -975,6 +975,7 @@ class _SearchPageState extends State<SearchPage> {
                                 },
                               ),
                             ),
+
                             SizedBox(height: 16),
                             SizedBox(
                               height: 400,
