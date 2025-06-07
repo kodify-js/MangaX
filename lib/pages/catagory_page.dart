@@ -6,14 +6,12 @@ import 'package:flutter/material.dart';
 class CatagoryPage extends StatefulWidget {
   final List<String>? catagory;
   final String? sort;
-  final String? type;
   final String? country;
   final String? title;
   const CatagoryPage({
     super.key,
     this.catagory,
     this.sort,
-    this.type,
     this.country,
     this.title,
   });
@@ -63,7 +61,6 @@ class _CatagoryPageState extends State<CatagoryPage> {
         perPage: 18,
         genre: widget.catagory,
         sort: widget.sort,
-        type: widget.type ?? "MANGA",
         countryOfOrigin: widget.country,
       );
 

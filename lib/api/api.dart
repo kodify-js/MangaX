@@ -168,7 +168,6 @@ class Api {
     int perPage = 10,
     String? sort,
     String? source,
-    String? type = "MANGA",
     List<String>? format,
     List<String>? genre,
     List<String>? excludedGenres,
@@ -187,7 +186,7 @@ class Api {
     Map<String, dynamic> variables = {
       "page": page,
       "size": perPage,
-      "type": type,
+      "type": "MANGA",
       "isAdult": isAdult,
     };
 

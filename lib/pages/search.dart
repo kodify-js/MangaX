@@ -28,7 +28,6 @@ class _SearchPageState extends State<SearchPage> {
   String selectedSource = '';
   List<String> selectedGenres = [];
   String selectedStatus = '';
-  String selectedType = '';
   String selectedSortBy = '';
   String selectedCountry = '';
 
@@ -191,7 +190,6 @@ class _SearchPageState extends State<SearchPage> {
                                   selectedSource = '';
                                   selectedGenres.clear();
                                   selectedStatus = '';
-                                  selectedType = '';
                                   selectedSortBy = '';
                                   selectedCountry = '';
                                 });
@@ -453,7 +451,6 @@ class _SearchPageState extends State<SearchPage> {
         source: selectedSource.isNotEmpty ? selectedSource : null,
         genre: selectedGenres.isNotEmpty ? selectedGenres : null,
         status: selectedStatus.isNotEmpty ? selectedStatus : null,
-        type: selectedType.isNotEmpty ? selectedType : null,
         sort: selectedSortBy.isNotEmpty ? selectedSortBy : null,
         countryOfOrigin: selectedCountry.isNotEmpty ? selectedCountry : null,
       );
@@ -497,7 +494,6 @@ class _SearchPageState extends State<SearchPage> {
           source: selectedSource.isNotEmpty ? selectedSource : null,
           genre: selectedGenres.isNotEmpty ? selectedGenres : null,
           status: selectedStatus.isNotEmpty ? selectedStatus : null,
-          type: selectedType.isNotEmpty ? selectedType : null,
           sort: selectedSortBy.isNotEmpty ? selectedSortBy : null,
           countryOfOrigin: selectedCountry.isNotEmpty ? selectedCountry : null,
         );
@@ -629,7 +625,6 @@ class _SearchPageState extends State<SearchPage> {
             if (selectedSource.isNotEmpty ||
                 selectedGenres.isNotEmpty ||
                 selectedStatus.isNotEmpty ||
-                selectedType.isNotEmpty ||
                 selectedSortBy.isNotEmpty ||
                 selectedCountry.isNotEmpty)
               Container(
@@ -711,20 +706,6 @@ class _SearchPageState extends State<SearchPage> {
                           backgroundColor: Theme.of(
                             context,
                           ).colorScheme.surface.withAlpha(100),
-                        ),
-                      ),
-                    if (selectedType.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.only(right: 8),
-                        child: Chip(
-                          label: Text(selectedType),
-                          onDeleted: () {
-                            setState(() => selectedType = '');
-                            _performSearch(searchQuery);
-                          },
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.outline.withAlpha(50),
                         ),
                       ),
                   ],

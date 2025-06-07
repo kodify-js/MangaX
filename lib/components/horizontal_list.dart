@@ -6,14 +6,12 @@ import 'package:flutter/material.dart';
 class HorizontalList extends StatefulWidget {
   final List<MangaClass> mangaList;
   final String title;
-  final String? type;
   final String? sort;
   final String? country;
   const HorizontalList({
     super.key,
     required this.mangaList,
     required this.title,
-    this.type,
     this.sort,
     this.country,
   });
@@ -50,7 +48,6 @@ class _HorizontalListState extends State<HorizontalList> {
                       MaterialPageRoute(
                         builder:
                             (context) => CatagoryPage(
-                              type: widget.type,
                               sort: widget.sort,
                               title: widget.title,
                               country: widget.country,
