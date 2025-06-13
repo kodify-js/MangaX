@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:mangax/Classes/character_class.dart';
 import 'package:mangax/Classes/manga_class.dart';
 import 'package:http/http.dart' as http;
 
@@ -220,7 +221,7 @@ class Api {
   Future<List<MangaClass>> searchManga({
     String? query,
     int page = 1,
-    int perPage = 10,
+    int perPage = 30,
     String? sort,
     String? source,
     List<String>? format,
@@ -248,8 +249,6 @@ class Api {
     ];
 
     List<String> mediaParams = [
-      'page: \$page',
-      'perPage: \$size',
       'type: \$type',
       'isAdult: \$isAdult',
       'sort: \$sort',
@@ -461,5 +460,75 @@ class Api {
     }
 
     throw Exception("Max retries exceeded");
+  }
+
+  Future<CharacterClass> getCharacterInfo(String characterId) async {
+    var query = '''
+      query (\$id: Int) {
+        Character(id: \$id) {
+          id
+          name {
+            first
+            middle
+            last
+            full
+            native
+            userPreferred
+            alternative
+          }
+          image {
+            large
+            medium
+          }
+          description
+          gender
+          bloodType
+          age
+        }
+      }
+    ''';
+
+    final variables = {"id": int.parse(characterId)};
+    final response = await http.post(
+      Uri.parse("https://graphql.anilist.co"),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: jsonEncode({"query": query, "variables": variables}),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final character = data['data']['Character'];
+
+      return CharacterClass(
+        id: character['id'],
+        name: CharacterName(
+          first: character['name']['first'] ?? '',
+          name:
+              character['name']['full'] ??
+              character['name']['userPreferred'] ??
+              '',
+          middle: character['name']['middle'] ?? '',
+          last: character['name']['last'] ?? '',
+          userPreferred:
+              character['name']['userPreferred'] ??
+              character['name']['full'] ??
+              '',
+          alternative:
+              character['name']['alternative'] != null
+                  ? List<String>.from(character['name']['alternative'])
+                  : [],
+        ),
+        age: character['age']?.toString() ?? 'Unknown',
+        imageUrl:
+            character['image']['large'] ?? character['image']['medium'] ?? '',
+        gender: character['gender'] ?? 'Unknown',
+        bloodType: character['bloodType'] ?? 'Unknown',
+      );
+    } else {
+      throw Exception("Failed to load character info");
+    }
   }
 }

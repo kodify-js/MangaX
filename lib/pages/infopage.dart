@@ -1,6 +1,8 @@
 import 'package:mangax/Classes/manga_class.dart';
 import 'package:mangax/api/api.dart';
 import 'package:flutter/material.dart';
+import 'package:mangax/pages/chapters_page.dart';
+import 'package:mangax/pages/character_info.dart';
 
 class Infopage extends StatefulWidget {
   final String mangaId;
@@ -203,24 +205,68 @@ class _InfopageState extends State<Infopage> {
                                       const SizedBox(height: 8),
                                       SizedBox(
                                         width: double.infinity,
-                                        child: TextButton(
-                                          onPressed: () {},
-                                          style: TextButton.styleFrom(
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
+                                        child: Row(
+                                          children: [
+                                            SizedBox(
+                                              width: 120,
+                                              child: TextButton(
+                                                onPressed:
+                                                    () => Navigator.of(
+                                                      context,
+                                                    ).push(
+                                                      MaterialPageRoute(
+                                                        builder:
+                                                            (
+                                                              context,
+                                                            ) => ChaptersPage(
+                                                              mangaId:
+                                                                  mangaDetails!
+                                                                      .id,
+                                                              mangaTitle:
+                                                                  mangaDetails!
+                                                                      .title,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                style: TextButton.styleFrom(
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                  ),
+                                                  backgroundColor:
+                                                      Theme.of(
+                                                        context,
+                                                      ).colorScheme.primary,
+                                                  foregroundColor: Colors.white,
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 16,
+                                                        vertical: 8,
+                                                      ),
+                                                ),
+                                                child: Text('Read Now'),
+                                              ),
                                             ),
-                                            backgroundColor:
-                                                Theme.of(
-                                                  context,
-                                                ).colorScheme.primary,
-                                            foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                              vertical: 8,
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                color:
+                                                    Theme.of(
+                                                      context,
+                                                    ).colorScheme.primary,
+                                              ),
+                                              child: Padding(
+                                                padding: const EdgeInsets.all(
+                                                  8.0,
+                                                ),
+                                                child: Icon(Icons.bookmark),
+                                              ),
                                             ),
-                                          ),
-                                          child: Text('Read Now'),
+                                          ],
                                         ),
                                       ),
                                     ],
@@ -348,54 +394,71 @@ class _InfopageState extends State<Infopage> {
                                             final character =
                                                 mangaDetails!
                                                     .characters![index];
-                                            return Container(
-                                              width: 100,
-                                              margin: const EdgeInsets.only(
-                                                right: 16,
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  ClipRRect(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                    child: Image.network(
-                                                      character.imageUrl!,
-                                                      fit: BoxFit.cover,
-                                                      height: 100,
-                                                      width: 100,
+                                            return GestureDetector(
+                                              onTap:
+                                                  () => Navigator.of(
+                                                    context,
+                                                  ).push(
+                                                    MaterialPageRoute(
+                                                      builder:
+                                                          (context) =>
+                                                              CharacterInfo(
+                                                                characterId:
+                                                                    character
+                                                                        .id!,
+                                                              ),
                                                     ),
                                                   ),
-                                                  const SizedBox(height: 8),
-                                                  Text(
-                                                    character.name!,
-                                                    maxLines: 1,
-                                                    style: TextStyle(
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      color:
-                                                          Theme.of(context)
-                                                              .colorScheme
-                                                              .onSurface,
+                                              child: Container(
+                                                width: 100,
+                                                margin: const EdgeInsets.only(
+                                                  right: 16,
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    ClipRRect(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                      child: Image.network(
+                                                        character.imageUrl!,
+                                                        fit: BoxFit.cover,
+                                                        height: 100,
+                                                        width: 100,
+                                                      ),
                                                     ),
-                                                  ),
-                                                  Text(
-                                                    character.role!,
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .onSurface
-                                                          .withAlpha(150),
+                                                    const SizedBox(height: 8),
+                                                    Text(
+                                                      character.name!,
+                                                      maxLines: 1,
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                        color:
+                                                            Theme.of(context)
+                                                                .colorScheme
+                                                                .onSurface,
+                                                      ),
                                                     ),
-                                                  ),
-                                                ],
+                                                    Text(
+                                                      character.role!,
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurface
+                                                            .withAlpha(150),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             );
                                           },
