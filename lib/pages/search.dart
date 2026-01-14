@@ -4,7 +4,9 @@ import 'package:mangax/api/api.dart';
 import 'package:mangax/pages/catagory_page.dart';
 import 'package:mangax/pages/infopage.dart';
 import 'package:mangax/utils/utils.dart';
+import 'package:mangax/widgets/cached_image.dart';
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -13,7 +15,7 @@ class SearchPage extends StatefulWidget {
   State<SearchPage> createState() => _SearchPageState();
 }
 
-class _SearchPageState extends State<SearchPage> {
+class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateMixin {
   String searchQuery = '';
   bool isSearching = false;
   List<MangaClass> searchResults = [];
@@ -23,6 +25,12 @@ class _SearchPageState extends State<SearchPage> {
   final int itemsPerPage = 10;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _searchFocusNode = FocusNode();
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  
+  // Cache futures to prevent reload on every rebuild
+  late Future<List<MangaClass>> _webNovelsFuture;
 
   // Filter options
   String selectedSource = '';
@@ -68,6 +76,7 @@ class _SearchPageState extends State<SearchPage> {
     'HIATUS',
     'CANCELLED',
   ];
+  
   final List<String> sortOptions = [
     'POPULARITY',
     'RATING',
@@ -124,12 +133,29 @@ class _SearchPageState extends State<SearchPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+    _animationController.forward();
+    
+    // Cache the web novels future to prevent reloading on every rebuild
+    _webNovelsFuture = Api().getWebNovels(
+      page: 1,
+      perpage: 10,
+      source: "WEB_NOVEL",
+    );
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
+    _searchFocusNode.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -143,6 +169,16 @@ class _SearchPageState extends State<SearchPage> {
         _loadMoreResults();
       }
     }
+  }
+
+  int _getActiveFilterCount() {
+    int count = 0;
+    if (selectedSource.isNotEmpty) count++;
+    if (selectedGenres.isNotEmpty) count += selectedGenres.length;
+    if (selectedStatus.isNotEmpty) count++;
+    if (selectedSortBy.isNotEmpty) count++;
+    if (selectedCountry.isNotEmpty) count++;
+    return count;
   }
 
   void _showFilterDrawer() {
@@ -527,603 +563,943 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        body: Column(
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  Expanded(
-                    child: Text(
-                      'Search',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 48),
-                ],
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      body: SafeArea(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Column(
+            children: [
+              // Modern Header with Search
+              _buildHeader(colorScheme),
+              // Active Filters
+              _buildActiveFilters(colorScheme),
+              // Content
+              Expanded(
+                child: searchQuery.isNotEmpty
+                    ? _buildSearchResults(colorScheme)
+                    : _buildDiscoverContent(colorScheme),
               ),
-            ),
-            // Search Bar with Filter
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.outline.withAlpha(100),
-                          width: 1,
-                        ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Top Row with back button and title
+          Row(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: IconButton(
+                  icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                  onPressed: () => Navigator.of(context).pop(),
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Search',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Search Bar Row
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _searchFocusNode.hasFocus 
+                          ? colorScheme.primary 
+                          : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: _performSearch,
+                    onChanged: (value) {
+                      setState(() {});
+                    },
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: colorScheme.onSurface,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Search manga, novels...',
+                      hintStyle: TextStyle(
+                        color: colorScheme.onSurface.withOpacity(0.5),
                       ),
-                      child: TextField(
-                        controller: _searchController,
-                        textInputAction: TextInputAction.search,
-                        onSubmitted: _performSearch,
-                        decoration: InputDecoration(
-                          hintText: 'Search manga, novels...',
-                          hintStyle: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withAlpha(150),
-                          ),
-                          prefixIcon: Icon(
-                            Icons.search,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        color: colorScheme.primary,
+                      ),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: Icon(Icons.clear_rounded, size: 20),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  searchQuery = '';
+                                  searchResults.clear();
+                                });
+                              },
+                              color: colorScheme.onSurface.withOpacity(0.5),
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
                       ),
                     ),
                   ),
-                  SizedBox(width: 12),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Filter Button with badge
+              Stack(
+                children: [
                   Container(
                     decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withAlpha(20),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.primary.withAlpha(100),
-                        width: 1,
+                      gradient: LinearGradient(
+                        colors: [
+                          colorScheme.primary,
+                          colorScheme.primary.withOpacity(0.8),
+                        ],
                       ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colorScheme.primary.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
                     child: IconButton(
                       onPressed: _showFilterDrawer,
-                      icon: Icon(
-                        Icons.tune,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
+                      icon: const Icon(Icons.tune_rounded),
+                      color: colorScheme.onPrimary,
                     ),
                   ),
-                ],
-              ),
-            ),
-            SizedBox(height: 16),
-            // Active Filters Display
-            if (selectedSource.isNotEmpty ||
-                selectedGenres.isNotEmpty ||
-                selectedStatus.isNotEmpty ||
-                selectedSortBy.isNotEmpty ||
-                selectedCountry.isNotEmpty)
-              Container(
-                height: 40,
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    if (selectedSortBy.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.only(right: 8),
-                        child: Chip(
-                          label: Text(
-                            'Sort: ${selectedSortBy.replaceAll('_', ' ')}',
+                  if (_getActiveFilterCount() > 0)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          '${_getActiveFilterCount()}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
                           ),
-                          onDeleted: () {
-                            setState(() => selectedSortBy = '');
-                            _performSearch(searchQuery);
-                          },
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primary.withAlpha(50),
-                        ),
-                      ),
-                    if (selectedCountry.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.only(right: 8),
-                        child: Chip(
-                          label: Text(
-                            countries[selectedCountry]!,
-                          ), // Display country name
-                          onDeleted: () {
-                            setState(() => selectedCountry = '');
-                            _performSearch(searchQuery);
-                          },
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.secondary.withAlpha(50),
-                        ),
-                      ),
-                    if (selectedSource.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.only(right: 8),
-                        child: Chip(
-                          label: Text(selectedSource),
-                          onDeleted: () {
-                            setState(() => selectedSource = '');
-                            _performSearch(searchQuery);
-                          },
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.tertiary.withAlpha(50),
-                        ),
-                      ),
-                    ...selectedGenres.map(
-                      (genre) => Padding(
-                        padding: EdgeInsets.only(right: 8),
-                        child: Chip(
-                          label: Text(genre),
-                          onDeleted: () {
-                            setState(() => selectedGenres.remove(genre));
-                            _performSearch(searchQuery);
-                          },
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.error.withAlpha(50),
                         ),
                       ),
                     ),
-                    if (selectedStatus.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.only(right: 8),
-                        child: Chip(
-                          label: Text(selectedStatus),
-                          onDeleted: () {
-                            setState(() => selectedStatus = '');
-                            _performSearch(searchQuery);
-                          },
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.surface.withAlpha(100),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveFilters(ColorScheme colorScheme) {
+    final hasFilters = selectedSource.isNotEmpty ||
+        selectedGenres.isNotEmpty ||
+        selectedStatus.isNotEmpty ||
+        selectedSortBy.isNotEmpty ||
+        selectedCountry.isNotEmpty;
+
+    if (!hasFilters) return const SizedBox.shrink();
+
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          if (selectedSortBy.isNotEmpty)
+            _buildFilterChip(
+              label: selectedSortBy.replaceAll('_', ' '),
+              icon: Icons.sort_rounded,
+              color: colorScheme.primary,
+              onDeleted: () {
+                setState(() => selectedSortBy = '');
+                if (searchQuery.isNotEmpty) _performSearch(searchQuery);
+              },
+            ),
+          if (selectedCountry.isNotEmpty)
+            _buildFilterChip(
+              label: countries[selectedCountry]!,
+              icon: Icons.flag_rounded,
+              color: Colors.orange,
+              onDeleted: () {
+                setState(() => selectedCountry = '');
+                if (searchQuery.isNotEmpty) _performSearch(searchQuery);
+              },
+            ),
+          if (selectedSource.isNotEmpty)
+            _buildFilterChip(
+              label: selectedSource.replaceAll('_', ' '),
+              icon: Icons.book_rounded,
+              color: Colors.purple,
+              onDeleted: () {
+                setState(() => selectedSource = '');
+                if (searchQuery.isNotEmpty) _performSearch(searchQuery);
+              },
+            ),
+          ...selectedGenres.map(
+            (genre) => _buildFilterChip(
+              label: genre,
+              icon: Icons.category_rounded,
+              color: Colors.teal,
+              onDeleted: () {
+                setState(() => selectedGenres.remove(genre));
+                if (searchQuery.isNotEmpty) _performSearch(searchQuery);
+              },
+            ),
+          ),
+          if (selectedStatus.isNotEmpty)
+            _buildFilterChip(
+              label: selectedStatus.replaceAll('_', ' '),
+              icon: Icons.info_rounded,
+              color: Colors.blue,
+              onDeleted: () {
+                setState(() => selectedStatus = '');
+                if (searchQuery.isNotEmpty) _performSearch(searchQuery);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onDeleted,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      child: Chip(
+        avatar: Icon(icon, size: 16, color: color),
+        label: Text(
+          label,
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+        ),
+        deleteIcon: Icon(Icons.close_rounded, size: 16),
+        onDeleted: onDeleted,
+        backgroundColor: color.withOpacity(0.1),
+        side: BorderSide(color: color.withOpacity(0.3)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchResults(ColorScheme colorScheme) {
+    if (isSearching) {
+      return _buildSearchSkeleton(colorScheme);
+    }
+
+    if (searchResults.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off_rounded,
+                size: 64,
+                color: colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No results found',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Try a different search term\nor adjust your filters',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurface.withOpacity(0.6),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.all(16),
+      itemCount: searchResults.length + (isLoadingMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == searchResults.length) {
+          return _buildLoadingMoreIndicator(colorScheme);
+        }
+        return _buildSearchResultCard(searchResults[index], colorScheme, index);
+      },
+    );
+  }
+
+  Widget _buildSearchResultCard(MangaClass manga, ColorScheme colorScheme, int index) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: 300 + (index * 50)),
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 20 * (1 - value)),
+            child: child,
+          ),
+        );
+      },
+      child: GestureDetector(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => Infopage(mangaId: manga.id!),
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: colorScheme.outline.withOpacity(0.1),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                // Cover Image
+                Stack(
+                  children: [
+                    Hero(
+                      tag: 'manga_cover_${manga.id}',
+                      child: Container(
+                        width: 90,
+                        height: 130,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.15),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: CachedImage(
+                            imageUrl: manga.coverImage ?? '',
+                            fit: BoxFit.cover,
+                            width: 90,
+                            height: 130,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Rating Badge
+                    if (manga.rating != null && manga.rating! > 0)
+                      Positioned(
+                        top: 6,
+                        left: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.75),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.star_rounded,
+                                color: Colors.amber,
+                                size: 12,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                manga.rating!.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                   ],
                 ),
-              ),
-            Expanded(
-              child:
-                  searchQuery.isNotEmpty
-                      ? isSearching
-                          ? Center(child: CircularProgressIndicator())
-                          : searchResults.isEmpty
-                          ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.search_off,
-                                  size: 48,
-                                  color: Colors.grey,
-                                ),
-                                SizedBox(height: 16),
-                                Text('No results found for "$searchQuery"'),
-                                SizedBox(height: 8),
-                                Text(
-                                  'Try a different search term or adjust filters',
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                              ],
-                            ),
-                          )
-                          : ListView.builder(
-                            controller: _scrollController,
-                            itemCount:
-                                searchResults.length + (isLoadingMore ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              if (index == searchResults.length) {
-                                return Container(
-                                  padding: const EdgeInsets.all(16.0),
-                                  child: Center(
-                                    child: Column(
-                                      children: [
-                                        CircularProgressIndicator(),
-                                        SizedBox(height: 8),
-                                        Text(
-                                          'Loading more...',
-                                          style: TextStyle(
-                                            color: Colors.grey[600],
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              final manga = searchResults[index];
-                              return GestureDetector(
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder:
-                                          (context) =>
-                                              Infopage(mangaId: manga.id!),
-                                    ),
-                                  );
-                                },
-                                child: Container(
-                                  width: double.infinity,
-                                  height: 140,
-                                  decoration: BoxDecoration(
-                                    border: Border(
-                                      bottom: BorderSide(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.outline.withAlpha(50),
-                                        width: 1,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12.0),
-                                    child: Row(
-                                      children: [
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            8.0,
-                                          ),
-                                          child: Image.network(
-                                            manga.coverImage!,
-                                            width: 80,
-                                            height: 100,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (
-                                              context,
-                                              error,
-                                              stackTrace,
-                                            ) {
-                                              return Container(
-                                                width: 80,
-                                                height: 100,
-                                                color: Colors.grey[300],
-                                                child: Icon(
-                                                  Icons.broken_image,
-                                                  size: 40,
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                        SizedBox(width: 16),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              Text(
-                                                manga.title!,
-                                                style: TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              SizedBox(height: 8),
-                                              Text(
-                                                manga.description ?? '',
-                                                style: TextStyle(
-                                                  fontSize: 14,
-                                                  color: Colors.grey[600],
-                                                ),
-                                                maxLines: 3,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          )
-                      : SingleChildScrollView(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                16.0,
-                                8.0,
-                                16.0,
-                                8.0,
-                              ),
-                              child: Text(
-                                "Popular Web Novels",
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontFamily: 'Sayyeda',
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              height: 200,
-                              child: FutureBuilder(
-                                future: Api().getWebNovels(
-                                  page: 1,
-                                  perpage: 10,
-                                  source: "WEB_NOVEL",
-                                ),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return Center(
-                                      child: CircularProgressIndicator(),
-                                    );
-                                  } else if (snapshot.hasError) {
-                                    return Center(
-                                      child: Text('Error: ${snapshot.error}'),
-                                    );
-                                  } else if (!snapshot.hasData ||
-                                      snapshot.data!.isEmpty) {
-                                    return Center(
-                                      child: Text(
-                                        'No popular web novels found',
-                                      ),
-                                    );
-                                  } else {
-                                    final mangaList = snapshot.data!;
-                                    return ListView.builder(
-                                      scrollDirection: Axis.horizontal,
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                      ),
-                                      itemCount: mangaList.length,
-                                      itemBuilder: (context, index) {
-                                        final manga = mangaList[index];
-                                        return Container(
-                                          width: 120,
-                                          margin: EdgeInsets.only(right: 12),
-                                          child: GestureDetector(
-                                            onTap: () {
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder:
-                                                      (context) => Infopage(
-                                                        mangaId: manga.id!,
-                                                      ),
-                                                ),
-                                              );
-                                            },
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                ClipRRect(
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        8.0,
-                                                      ),
-                                                  child: Image.network(
-                                                    manga.coverImage!,
-                                                    width: 120,
-                                                    height: 160,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (
-                                                      context,
-                                                      error,
-                                                      stackTrace,
-                                                    ) {
-                                                      return Container(
-                                                        width: 120,
-                                                        height: 160,
-                                                        color: Colors.grey[300],
-                                                        child: Icon(
-                                                          Icons.broken_image,
-                                                          size: 40,
-                                                        ),
-                                                      );
-                                                    },
-                                                  ),
-                                                ),
-                                                SizedBox(height: 8),
-                                                Text(
-                                                  manga.title!,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    );
-                                  }
-                                },
-                              ),
-                            ),
-
-                            SizedBox(height: 16),
-                            SizedBox(
-                              height: 400,
-                              child: GridView(
-                                physics: NeverScrollableScrollPhysics(),
-                                gridDelegate:
-                                    SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 2,
-                                      childAspectRatio: 1.5,
-                                      crossAxisSpacing: 8.0,
-                                      mainAxisSpacing: 8.0,
-                                    ),
-                                padding: EdgeInsets.symmetric(horizontal: 16),
-                                children: List.generate(
-                                  categories.length,
-                                  (index) => GestureDetector(
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder:
-                                              (context) => CatagoryPage(
-                                                catagory: [
-                                                  categories[index].value,
-                                                ],
-                                              ),
-                                        ),
-                                      );
-                                    },
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.primary.withAlpha(50),
-                                        borderRadius: BorderRadius.circular(
-                                          8.0,
-                                        ),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Padding(
-                                            padding: const EdgeInsets.all(8.0),
-                                            child: Text(
-                                              categories[index].value,
-                                              style: TextStyle(
-                                                fontSize: 20,
-                                                letterSpacing: 2,
-                                                fontFamily: 'MangaX',
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.end,
-                                            children: [
-                                              Padding(
-                                                padding:
-                                                    const EdgeInsets.fromLTRB(
-                                                      0.0,
-                                                      0.0,
-                                                      16.0,
-                                                      8.0,
-                                                    ),
-                                                child: SizedBox(
-                                                  width: 100,
-                                                  child: Stack(
-                                                    children: [
-                                                      Positioned(
-                                                        right: 10,
-                                                        bottom: 5,
-                                                        child: Container(
-                                                          width: 20,
-                                                          height: 50,
-                                                          decoration: BoxDecoration(
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  4.0,
-                                                                ),
-                                                            color: Theme.of(
-                                                                  context,
-                                                                )
-                                                                .colorScheme
-                                                                .primary
-                                                                .withAlpha(180),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      Positioned(
-                                                        right: 0,
-                                                        bottom: 10,
-                                                        child: Container(
-                                                          width: 30,
-                                                          height: 40,
-                                                          decoration: BoxDecoration(
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  4.0,
-                                                                ),
-                                                            color: Theme.of(
-                                                                  context,
-                                                                )
-                                                                .colorScheme
-                                                                .primary
-                                                                .withAlpha(100),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      Container(
-                                                        margin: EdgeInsets.only(
-                                                          left: 20,
-                                                        ),
-                                                        width: 60,
-                                                        height: 60,
-                                                        decoration: BoxDecoration(
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                8.0,
-                                                              ),
-                                                          image: DecorationImage(
-                                                            image: AssetImage(
-                                                              'assets/images/${categories[index].value}.png',
-                                                            ),
-                                                            fit: BoxFit.cover,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                const SizedBox(width: 14),
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        manga.title ?? 'Unknown',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
                         ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                      const SizedBox(height: 6),
+                      // Status Badge
+                      if (manga.status != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getStatusColor(manga.status).withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            _formatStatus(manga.status),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: _getStatusColor(manga.status),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      Text(
+                        manga.description ?? 'No description available',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colorScheme.onSurface.withOpacity(0.6),
+                          height: 1.4,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 16,
+                  color: colorScheme.onSurface.withOpacity(0.3),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingMoreIndicator(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: Column(
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Loading more...',
+              style: TextStyle(
+                color: colorScheme.onSurface.withOpacity(0.5),
+                fontSize: 12,
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildSearchSkeleton(ColorScheme colorScheme) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: 5,
+      itemBuilder: (context, index) {
+        return Shimmer.fromColors(
+          baseColor: colorScheme.surfaceContainerHighest,
+          highlightColor: colorScheme.surface,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 90,
+                  height: 130,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 20,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        height: 16,
+                        width: 80,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        height: 14,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        height: 14,
+                        width: 150,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDiscoverContent(ColorScheme colorScheme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Quick Categories Section
+          _buildSectionHeader(
+            title: 'Browse Categories',
+            icon: Icons.grid_view_rounded,
+            color: colorScheme.primary,
+          ),
+          const SizedBox(height: 12),
+          _buildCategoryGrid(colorScheme),
+          const SizedBox(height: 24),
+          // Popular Web Novels Section
+          _buildSectionHeader(
+            title: 'Popular Web Novels',
+            icon: Icons.auto_stories_rounded,
+            color: Colors.purple,
+          ),
+          const SizedBox(height: 12),
+          _buildWebNovelsSection(colorScheme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required String title,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryGrid(ColorScheme colorScheme) {
+    final categoryIcons = {
+      'Action': Icons.flash_on_rounded,
+      'Romance': Icons.favorite_rounded,
+      'Fantasy': Icons.auto_fix_high_rounded,
+      'Comedy': Icons.sentiment_very_satisfied_rounded,
+      'Adventure': Icons.explore_rounded,
+      'Drama': Icons.theater_comedy_rounded,
+    };
+
+    final categoryColors = {
+      'Action': Colors.red,
+      'Romance': Colors.pink,
+      'Fantasy': Colors.purple,
+      'Comedy': Colors.amber,
+      'Adventure': Colors.green,
+      'Drama': Colors.blue,
+    };
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 2.2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: categories.length > 6 ? 6 : categories.length,
+      itemBuilder: (context, index) {
+        final category = categories[index];
+        final color = categoryColors[category.value] ?? colorScheme.primary;
+        final icon = categoryIcons[category.value] ?? Icons.category_rounded;
+
+        return GestureDetector(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => CatagoryPage(
+                  catagory: [category.value],
+                ),
+              ),
+            );
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  color.withOpacity(0.8),
+                  color.withOpacity(0.6),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  right: -10,
+                  bottom: -10,
+                  child: Icon(
+                    icon,
+                    size: 60,
+                    color: Colors.white.withOpacity(0.2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(icon, color: Colors.white, size: 22),
+                      const SizedBox(height: 4),
+                      Text(
+                        category.value,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildWebNovelsSection(ColorScheme colorScheme) {
+    return SizedBox(
+      height: 200,
+      child: FutureBuilder<List<MangaClass>>(
+        future: _webNovelsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return _buildWebNovelsSkeleton(colorScheme);
+          } else if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+            return Center(
+              child: Text(
+                'No web novels found',
+                style: TextStyle(color: colorScheme.onSurface.withOpacity(0.5)),
+              ),
+            );
+          }
+
+          final mangaList = snapshot.data!;
+          return ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: mangaList.length,
+            itemBuilder: (context, index) {
+              final manga = mangaList[index];
+              return _buildWebNovelCard(manga, colorScheme);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildWebNovelCard(MangaClass manga, ColorScheme colorScheme) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => Infopage(mangaId: manga.id!),
+          ),
+        );
+      },
+      child: Container(
+        width: 130,
+        margin: const EdgeInsets.only(right: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                Container(
+                  height: 160,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: CachedImage(
+                      imageUrl: manga.coverImage ?? '',
+                      width: 130,
+                      height: 160,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+                // Rating badge
+                if (manga.rating != null && manga.rating! > 0)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.75),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.star_rounded, color: Colors.amber, size: 12),
+                          const SizedBox(width: 2),
+                          Text(
+                            manga.rating!.toStringAsFixed(1),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              manga.title ?? 'Unknown',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWebNovelsSkeleton(ColorScheme colorScheme) {
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      itemCount: 5,
+      itemBuilder: (context, index) {
+        return Shimmer.fromColors(
+          baseColor: colorScheme.surfaceContainerHighest,
+          highlightColor: colorScheme.surface,
+          child: Container(
+            width: 130,
+            margin: const EdgeInsets.only(right: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 160,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 14,
+                  width: 100,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Color _getStatusColor(String? status) {
+    switch (status?.toUpperCase()) {
+      case 'ONGOING':
+      case 'RELEASING':
+        return Colors.green;
+      case 'COMPLETED':
+      case 'FINISHED':
+        return Colors.blue;
+      case 'HIATUS':
+        return Colors.orange;
+      case 'CANCELLED':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _formatStatus(String? status) {
+    if (status == null) return 'Unknown';
+    return status.replaceAll('_', ' ').split(' ').map((word) {
+      if (word.isEmpty) return word;
+      return word[0].toUpperCase() + word.substring(1).toLowerCase();
+    }).join(' ');
   }
 }

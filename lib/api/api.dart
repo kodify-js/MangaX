@@ -6,218 +6,603 @@ import 'package:http/http.dart' as http;
 class Api {
   Api();
 
-  // Rate limiting variables
-  static DateTime? _lastSearchRequestTime;
-  static const Duration _minSearchInterval = Duration(
-    milliseconds: 1000,
-  ); // 1 second between search requests
+  // MangaDex API base URL
+  static const String _mangaDexBaseUrl = 'https://api.mangadex.org';
 
-  // Rate limiting method for search requests
-  Future<void> _throttleSearchRequest() async {
-    if (_lastSearchRequestTime != null) {
+  // Rate limiting for MangaDex
+  static DateTime? _lastMangaDexRequestTime;
+  static const Duration _minMangaDexInterval = Duration(
+    milliseconds: 500,
+  ); // 500ms between MangaDex requests
+
+  // Rate limiting method for MangaDex requests
+  Future<void> _throttleMangaDexRequest() async {
+    if (_lastMangaDexRequestTime != null) {
       final timeSinceLastRequest = DateTime.now().difference(
-        _lastSearchRequestTime!,
+        _lastMangaDexRequestTime!,
       );
-      if (timeSinceLastRequest < _minSearchInterval) {
-        final waitTime = _minSearchInterval - timeSinceLastRequest;
+      if (timeSinceLastRequest < _minMangaDexInterval) {
+        final waitTime = _minMangaDexInterval - timeSinceLastRequest;
         print(
-          "Throttling search request, waiting ${waitTime.inMilliseconds}ms",
+          "Throttling MangaDex request, waiting ${waitTime.inMilliseconds}ms",
         );
         await Future.delayed(waitTime);
       }
     }
-    _lastSearchRequestTime = DateTime.now();
+    _lastMangaDexRequestTime = DateTime.now();
   }
 
-  List<MangaClass> parseMangaData(List media) {
+  // Fetch statistics for multiple manga (ratings, follows, etc.)
+  Future<Map<String, double>> _getMangaStatistics(List<String> mangaIds) async {
+    if (mangaIds.isEmpty) return {};
+    
+    try {
+      await _throttleMangaDexRequest();
+      
+      final uri = Uri.parse('$_mangaDexBaseUrl/statistics/manga').replace(
+        queryParameters: {
+          'manga[]': mangaIds,
+        },
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final statistics = data['statistics'] as Map<String, dynamic>? ?? {};
+        Map<String, double> ratings = {};
+        
+        for (var entry in statistics.entries) {
+          final mangaId = entry.key;
+          final stats = entry.value as Map<String, dynamic>? ?? {};
+          final rating = stats['rating'] as Map<String, dynamic>? ?? {};
+          final average = rating['average'];
+          if (average != null) {
+            ratings[mangaId] = (average as num).toDouble();
+          }
+        }
+        return ratings;
+      }
+    } catch (e) {
+      print("Error fetching manga statistics: $e");
+    }
+    return {};
+  }
+
+  // Parse MangaDex manga data into MangaClass
+  List<MangaClass> parseMangaDexData(List mangaList, [Map<String, String>? coverArtMap, Map<String, double>? ratingsMap]) {
     List<MangaClass> result = [];
-    for (var item in media) {
+    for (var item in mangaList) {
+      final attributes = item['attributes'] ?? {};
+      final relationships = item['relationships'] as List? ?? [];
+      
+      // Get title (prefer English, fallback to other languages)
+      String title = '';
+      final titles = attributes['title'] as Map<String, dynamic>? ?? {};
+      title = titles['en'] ?? 
+              titles['ja-ro'] ?? 
+              titles['ja'] ?? 
+              titles.values.firstOrNull?.toString() ?? 
+              'Unknown Title';
+
+      // Get description
+      String description = '';
+      final descriptions = attributes['description'] as Map<String, dynamic>? ?? {};
+      description = descriptions['en'] ?? 
+                    descriptions.values.firstOrNull?.toString() ?? 
+                    '';
+
+      // Get cover art
+      String coverImage = '';
+      String? coverArtId;
+      for (var rel in relationships) {
+        if (rel['type'] == 'cover_art') {
+          coverArtId = rel['id'];
+          if (rel['attributes'] != null && rel['attributes']['fileName'] != null) {
+            coverImage = 'https://uploads.mangadex.org/covers/${item['id']}/${rel['attributes']['fileName']}';
+          }
+          break;
+        }
+      }
+      // Use coverArtMap if available and coverImage is still empty
+      if (coverImage.isEmpty && coverArtId != null && coverArtMap != null) {
+        coverImage = coverArtMap[coverArtId] ?? '';
+      }
+
+      // Get author
+      String author = '';
+      for (var rel in relationships) {
+        if (rel['type'] == 'author') {
+          if (rel['attributes'] != null && rel['attributes']['name'] != null) {
+            author = rel['attributes']['name'];
+          }
+          break;
+        }
+      }
+
+      // Get genres/tags
+      List<String> genres = [];
+      final tags = attributes['tags'] as List? ?? [];
+      for (var tag in tags) {
+        final tagName = tag['attributes']?['name']?['en'];
+        if (tagName != null) {
+          genres.add(tagName);
+        }
+      }
+
+      // Get alternate titles
+      List<String> synonyms = [];
+      final altTitles = attributes['altTitles'] as List? ?? [];
+      for (var altTitle in altTitles) {
+        if (altTitle is Map) {
+          synonyms.addAll(altTitle.values.map((e) => e.toString()));
+        }
+      }
+
+      // Map MangaDex status to similar format
+      String status = attributes['status']?.toString().toUpperCase() ?? 'UNKNOWN';
+
+      // Get rating from ratingsMap if available
+      double rating = 0.0;
+      final mangaId = item['id'] as String?;
+      if (ratingsMap != null && mangaId != null && ratingsMap.containsKey(mangaId)) {
+        rating = ratingsMap[mangaId]!;
+      }
+
       MangaClass manga = MangaClass(
-        id: item['id'].toString(),
-        title: item['title']['userPreferred'] ?? item['title']['romaji'],
-        coverImage: item['coverImage']['large'] ?? item['coverImage']['medium'],
-        description: item['description'] ?? '',
-        status: item['status'] ?? '',
-        genre:
-            item['genres'] != null && item['genres'].isNotEmpty
-                ? item['genres']
-                : 'Unknown',
-        chaptersCount: item['chapters'] ?? 0,
-        color: item['coverImage']['color'] ?? "",
-        bannerImage: item['bannerImage'] ?? '',
-        rating:
-            item['averageScore'] != null
-                ? (item['averageScore'] / 10).toDouble()
-                : 0.0,
-        characters:
-            item['characters'] != null
-                ? (item['characters']['edges'] as List)
-                    .map(
-                      (edge) => CharacterPreview(
-                        id: edge['node']['id'].toString(),
-                        name: edge['node']['name']['userPreferred'],
-                        imageUrl: edge['node']['image']['large'],
-                        role: edge['role'],
-                      ),
-                    )
-                    .toList()
-                : [],
-        recommendations:
-            item['recommendations'] != null
-                ? (item['recommendations']['edges'] as List)
-                    .map(
-                      (edges) => RelatedManga(
-                        id:
-                            edges['node']['mediaRecommendation']['id']
-                                .toString(),
-                        title:
-                            edges['node']['mediaRecommendation']['title']['userPreferred'],
-                        coverImage:
-                            edges['node']['mediaRecommendation']['coverImage']['large'],
-                      ),
-                    )
-                    .toList()
-                : [],
-        synonyms:
-            item['synonyms'] != null ? List<String>.from(item['synonyms']) : [],
+        id: 'mdx_${item['id']}', // Prefix with mdx_ to identify MangaDex source
+        title: title,
+        coverImage: coverImage,
+        description: description,
+        status: status,
+        author: author,
+        genre: genres.isNotEmpty ? genres : ['Unknown'],
+        chaptersCount: attributes['lastChapter'] != null 
+            ? int.tryParse(attributes['lastChapter'].toString()) ?? 0 
+            : 0,
+        color: '',
+        bannerImage: '',
+        rating: rating,
+        characters: [],
+        recommendations: [],
+        synonyms: synonyms,
       );
       result.add(manga);
     }
     return result;
   }
 
+  // Get trending manga from MangaDex
+  Future<List<MangaClass>> getTrendingMangaDex({int page = 1, int perPage = 10}) async {
+    await _throttleMangaDexRequest();
+    
+    final offset = (page - 1) * perPage;
+    final uri = Uri.parse('$_mangaDexBaseUrl/manga').replace(
+      queryParameters: {
+        'limit': perPage.toString(),
+        'offset': offset.toString(),
+        'order[followedCount]': 'desc',
+        'order[rating]': 'desc',
+        'includes[]': ['cover_art', 'author'],
+        'contentRating[]': ['safe', 'suggestive'],
+        'hasAvailableChapters': 'true',
+      },
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {'Accept': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final mangaList = data['data'] as List;
+      
+      // Extract manga IDs for statistics fetch
+      final mangaIds = mangaList.map((m) => m['id'] as String).toList();
+      final ratingsMap = await _getMangaStatistics(mangaIds);
+      
+      return parseMangaDexData(mangaList, null, ratingsMap);
+    } else {
+      throw Exception("Failed to load trending manga from MangaDex: ${response.statusCode}");
+    }
+  }
+
+  // Get popular manga from MangaDex
+  Future<List<MangaClass>> getPopularMangaDex({int page = 1, int perPage = 10}) async {
+    await _throttleMangaDexRequest();
+    
+    final offset = (page - 1) * perPage;
+    final uri = Uri.parse('$_mangaDexBaseUrl/manga').replace(
+      queryParameters: {
+        'limit': perPage.toString(),
+        'offset': offset.toString(),
+        'order[followedCount]': 'desc',
+        'includes[]': ['cover_art', 'author'],
+        'contentRating[]': ['safe', 'suggestive'],
+        'hasAvailableChapters': 'true',
+      },
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {'Accept': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final mangaList = data['data'] as List;
+      
+      // Extract manga IDs for statistics fetch
+      final mangaIds = mangaList.map((m) => m['id'] as String).toList();
+      final ratingsMap = await _getMangaStatistics(mangaIds);
+      
+      return parseMangaDexData(mangaList, null, ratingsMap);
+    } else {
+      throw Exception("Failed to load popular manga from MangaDex: ${response.statusCode}");
+    }
+  }
+
+  // Search manga on MangaDex
+  Future<List<MangaClass>> searchMangaDex({
+    String? query,
+    int page = 1,
+    int perPage = 30,
+    String? status,
+    List<String>? includedTags,
+    List<String>? excludedTags,
+    String? contentRating,
+    String? originalLanguage,
+    String? orderBy,
+  }) async {
+    await _throttleMangaDexRequest();
+    
+    final offset = (page - 1) * perPage;
+    Map<String, dynamic> queryParams = {
+      'limit': perPage.toString(),
+      'offset': offset.toString(),
+      'includes[]': ['cover_art', 'author'],
+      'contentRating[]': contentRating != null ? [contentRating] : ['safe', 'suggestive'],
+    };
+
+    if (query != null && query.isNotEmpty) {
+      queryParams['title'] = query;
+    }
+
+    if (status != null && status.isNotEmpty) {
+      queryParams['status[]'] = [status.toLowerCase()];
+    }
+
+    if (originalLanguage != null && originalLanguage.isNotEmpty) {
+      queryParams['originalLanguage[]'] = [originalLanguage];
+    }
+
+    // Set ordering
+    if (orderBy != null) {
+      switch (orderBy.toUpperCase()) {
+        case 'POPULARITY_DESC':
+          queryParams['order[followedCount]'] = 'desc';
+          break;
+        case 'RATING_DESC':
+          queryParams['order[rating]'] = 'desc';
+          break;
+        case 'LATEST_UPLOAD_DESC':
+          queryParams['order[latestUploadedChapter]'] = 'desc';
+          break;
+        case 'TITLE_ASC':
+          queryParams['order[title]'] = 'asc';
+          break;
+        case 'CREATED_AT_DESC':
+          queryParams['order[createdAt]'] = 'desc';
+          break;
+        default:
+          queryParams['order[relevance]'] = 'desc';
+      }
+    } else {
+      queryParams['order[relevance]'] = 'desc';
+    }
+
+    final uri = Uri.parse('$_mangaDexBaseUrl/manga').replace(
+      queryParameters: queryParams.map((key, value) => 
+        MapEntry(key, value is List ? value : value.toString())),
+    );
+
+    int retryCount = 0;
+    const maxRetries = 3;
+
+    while (retryCount < maxRetries) {
+      try {
+        final response = await http.get(
+          uri,
+          headers: {'Accept': 'application/json'},
+        ).timeout(Duration(seconds: 30));
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final mangaList = data['data'] as List;
+          
+          // Extract manga IDs for statistics fetch
+          final mangaIds = mangaList.map((m) => m['id'] as String).toList();
+          final ratingsMap = await _getMangaStatistics(mangaIds);
+          
+          return parseMangaDexData(mangaList, null, ratingsMap);
+        } else if (response.statusCode == 429) {
+          retryCount++;
+          final waitTime = Duration(seconds: retryCount * 3);
+          print("MangaDex rate limited, waiting ${waitTime.inSeconds}s before retry");
+          await Future.delayed(waitTime);
+          continue;
+        } else {
+          throw Exception("Failed to search manga on MangaDex: ${response.statusCode}");
+        }
+      } catch (e) {
+        if (e.toString().contains('TimeoutException')) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw Exception("MangaDex request timeout after $maxRetries retries");
+          }
+          await Future.delayed(Duration(seconds: retryCount * 2));
+          continue;
+        }
+        rethrow;
+      }
+    }
+    throw Exception("Max retries exceeded for MangaDex");
+  }
+
+  // Get manga details from MangaDex
+  Future<MangaClass> getMangaDetailsMangaDex(String mangaId) async {
+    await _throttleMangaDexRequest();
+    
+    // Remove mdx_ prefix if present
+    final cleanId = mangaId.startsWith('mdx_') ? mangaId.substring(4) : mangaId;
+    
+    final uri = Uri.parse('$_mangaDexBaseUrl/manga/$cleanId').replace(
+      queryParameters: {
+        'includes[]': ['cover_art', 'author', 'artist'],
+      },
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {'Accept': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      
+      // Fetch rating for this manga
+      final ratingsMap = await _getMangaStatistics([cleanId]);
+      final manga = parseMangaDexData([data['data']], null, ratingsMap).first;
+      
+      // Fetch related manga based on similar tags
+      try {
+        final relatedManga = await getRelatedMangaMangaDex(cleanId);
+        manga.recommendations = relatedManga.map((m) => RelatedManga(
+          id: m.id,
+          title: m.title,
+          coverImage: m.coverImage,
+        )).toList();
+      } catch (e) {
+        print("Failed to fetch related manga: $e");
+        manga.recommendations = [];
+      }
+      
+      return manga;
+    } else {
+      throw Exception("Failed to load manga details from MangaDex: ${response.statusCode}");
+    }
+  }
+
+  // Get related/similar manga from MangaDex
+  Future<List<MangaClass>> getRelatedMangaMangaDex(String mangaId, {int limit = 10}) async {
+    await _throttleMangaDexRequest();
+    
+    // Remove mdx_ prefix if present
+    final cleanId = mangaId.startsWith('mdx_') ? mangaId.substring(4) : mangaId;
+    
+    // First get the manga to find its tags
+    final mangaUri = Uri.parse('$_mangaDexBaseUrl/manga/$cleanId');
+    final mangaResponse = await http.get(
+      mangaUri,
+      headers: {'Accept': 'application/json'},
+    );
+    
+    if (mangaResponse.statusCode != 200) {
+      return [];
+    }
+    
+    final mangaData = jsonDecode(mangaResponse.body);
+    final attributes = mangaData['data']['attributes'] ?? {};
+    final tags = attributes['tags'] as List? ?? [];
+    
+    // Get tag IDs for searching similar manga
+    List<String> tagIds = [];
+    for (var tag in tags) {
+      if (tag['id'] != null) {
+        tagIds.add(tag['id']);
+      }
+      if (tagIds.length >= 3) break; // Limit to 3 tags for better results
+    }
+    
+    if (tagIds.isEmpty) {
+      return [];
+    }
+    
+    await _throttleMangaDexRequest();
+    
+    // Search for manga with similar tags
+    // Build query string manually for proper array parameter handling
+    final queryParams = <String, String>{
+      'limit': limit.toString(),
+      'includedTagsMode': 'OR',
+      'order[followedCount]': 'desc',
+      'hasAvailableChapters': 'true',
+    };
+    
+    // Build the full URL with array parameters
+    var queryString = queryParams.entries.map((e) => '${e.key}=${e.value}').join('&');
+    queryString += '&' + tagIds.map((id) => 'includedTags[]=$id').join('&');
+    queryString += '&includes[]=cover_art&includes[]=author';
+    queryString += '&contentRating[]=safe&contentRating[]=suggestive';
+    
+    final uri = Uri.parse('$_mangaDexBaseUrl/manga?$queryString');
+    
+    final response = await http.get(
+      uri,
+      headers: {'Accept': 'application/json'},
+    );
+    
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final results = parseMangaDexData(data['data']);
+      // Filter out the current manga if it's in results
+      return results.where((m) => !m.id!.contains(cleanId)).take(limit).toList();
+    }
+    
+    return [];
+  }
+
+  // Get manga by country/original language from MangaDex
+  Future<List<MangaClass>> getMangaByLanguageMangaDex({
+    required String language,
+    int page = 1,
+    int perPage = 10,
+  }) async {
+    await _throttleMangaDexRequest();
+    
+    final offset = (page - 1) * perPage;
+    final uri = Uri.parse('$_mangaDexBaseUrl/manga').replace(
+      queryParameters: {
+        'limit': perPage.toString(),
+        'offset': offset.toString(),
+        'originalLanguage[]': [language],
+        'order[followedCount]': 'desc',
+        'includes[]': ['cover_art', 'author'],
+        'contentRating[]': ['safe', 'suggestive'],
+        'hasAvailableChapters': 'true',
+      },
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {'Accept': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final mangaList = data['data'] as List;
+      
+      // Extract manga IDs for statistics fetch
+      final mangaIds = mangaList.map((m) => m['id'] as String).toList();
+      final ratingsMap = await _getMangaStatistics(mangaIds);
+      
+      return parseMangaDexData(mangaList, null, ratingsMap);
+    } else {
+      throw Exception("Failed to load manga by language from MangaDex: ${response.statusCode}");
+    }
+  }
+
+  // Rate limiting method for search requests (kept for compatibility)
+  Future<void> _throttleSearchRequest() async {
+    await _throttleMangaDexRequest();
+  }
+
+  // Get trending manga using MangaDex
   Future<List<MangaClass>> getTrendingManga(int page, int perpage) async {
-    var query =
-        'query (\$page: Int, \$id: Int, \$type: MediaType, \$search: String, \$isAdult: Boolean = false, \$size: Int,\$sort: [MediaSort] = [TRENDING_DESC]) {Page(page: \$page, perPage: \$size) {pageInfo {total perPage currentPage lastPage hasNextPage}media(id: \$id, type: \$type, search: \$search, isAdult: \$isAdult ,sort:\$sort) {id idMal status(version: 2) title { userPreferred romaji english native }bannerImage popularity coverImage{extraLarge large medium color}episodes format season description  seasonYear chapters volumes averageScore genres nextAiringEpisode {airingAt timeUntilAiring episode }  } }}';
-    final variables = {
-      "page": page,
-      "size": perpage,
-      "type": "MANGA",
-      "sort": ["TRENDING_DESC", "POPULARITY_DESC"],
-    };
-    final response = await http.post(
-      Uri.parse("https://graphql.anilist.co"),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({"query": query, "variables": variables}),
-    );
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return parseMangaData(data['data']['Page']['media']);
-    } else {
-      throw Exception("Failed to load trending manga");
-    }
+    return await getTrendingMangaDex(page: page, perPage: perpage);
   }
 
+  // Get popular manga using MangaDex
   Future<List<MangaClass>> getPopularManga(int page, int perpage) async {
-    var query =
-        'query (\$page: Int, \$id: Int, \$type: MediaType, \$search: String, \$isAdult: Boolean = false, \$size: Int,\$sort: [MediaSort] = [POPULARITY_DESC]) {Page(page: \$page, perPage: \$size) {pageInfo {total perPage currentPage lastPage hasNextPage}media(id: \$id, type: \$type, search: \$search, isAdult: \$isAdult ,sort:\$sort) {id idMal status(version: 2) title { userPreferred romaji english native }bannerImage popularity coverImage{extraLarge large medium color}episodes format season description  seasonYear chapters volumes averageScore genres nextAiringEpisode {airingAt timeUntilAiring episode }  } }}';
-    final variables = {
-      "page": page,
-      "size": perpage,
-      "type": "MANGA",
-      "sort": ["POPULARITY_DESC", "TRENDING_DESC"],
-    };
-    final response = await http.post(
-      Uri.parse("https://graphql.anilist.co"),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({"query": query, "variables": variables}),
-    );
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return Api().parseMangaData(data['data']['Page']['media']);
-    } else {
-      throw Exception("Failed to load popular manga");
-    }
+    return await getPopularMangaDex(page: page, perPage: perpage);
   }
 
+  // Get trending manga by country/language using MangaDex
+  // Country code mapping: JP -> ja, KR -> ko, CN -> zh, TW -> zh-hk
   Future<List<MangaClass>> getTrendingByCountry(
     String countrycode,
     int page,
     int perpage,
   ) async {
-    var query =
-        'query (\$page: Int, \$id: Int, \$type: MediaType, \$search: String, \$isAdult: Boolean = false, \$size: Int,\$sort: [MediaSort] = [POPULARITY_DESC,SCORE_DESC],\$countryOfOrigin:CountryCode) {Page(page: \$page, perPage: \$size) {pageInfo {total perPage currentPage lastPage hasNextPage}media(id: \$id, type: \$type, search: \$search, isAdult: \$isAdult ,sort:\$sort,countryOfOrigin:\$countryOfOrigin) {id idMal status(version: 2) title { userPreferred romaji english native }bannerImage popularity coverImage{extraLarge large medium color}episodes format season description  seasonYear chapters volumes averageScore genres nextAiringEpisode {airingAt timeUntilAiring episode }  } }}';
-    final variables = {
-      "page": page,
-      "size": perpage,
-      "type": "MANGA",
-      "countryOfOrigin": countrycode,
-      "sort": ["TRENDING_DESC", "POPULARITY_DESC"],
+    // Map AniList country codes to MangaDex language codes
+    final languageMap = {
+      'JP': 'ja',
+      'KR': 'ko',
+      'CN': 'zh',
+      'TW': 'zh-hk',
     };
-    final response = await http.post(
-      Uri.parse("https://graphql.anilist.co"),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({"query": query, "variables": variables}),
+    final language = languageMap[countrycode.toUpperCase()] ?? 'ja';
+    return await getMangaByLanguageMangaDex(
+      language: language,
+      page: page,
+      perPage: perpage,
     );
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return Api().parseMangaData(data['data']['Page']['media']);
-    } else {
-      throw Exception("Failed to load trending manga by country");
-    }
   }
 
+  // Get manga details using MangaDex
   Future<MangaClass> getMangaDetails(String id) async {
-    var query =
-        'query (\$id: Int) { Media(id: \$id) { id idMal title { english native romaji } synonyms countryOfOrigin isLicensed isAdult externalLinks { url site type language } coverImage { extraLarge large color } startDate { year month day } endDate { year month day } bannerImage season seasonYear description type format status(version: 2) episodes duration chapters volumes trailer { id site thumbnail } genres source averageScore popularity meanScore nextAiringEpisode { airingAt timeUntilAiring episode } characters(sort: ROLE) { edges { role node { id name { first middle last full native userPreferred } image { large medium } } voiceActors(sort: LANGUAGE) { id languageV2 name { first middle last full native userPreferred } image { large medium } } } } recommendations { edges { node { id mediaRecommendation { id idMal title { romaji english native userPreferred } status episodes coverImage { extraLarge large medium color } bannerImage format chapters meanScore nextAiringEpisode { episode timeUntilAiring airingAt } } } } } relations { edges { id relationType node { id idMal status coverImage { extraLarge large medium color } bannerImage title { romaji english native userPreferred } episodes chapters format nextAiringEpisode { airingAt timeUntilAiring episode } meanScore } } } studios(isMain: true) { edges { isMain node { id name } } } } }';
-    final variables = {"id": int.parse(id), "type": "MANGA"};
-    final response = await http.post(
-      Uri.parse("https://graphql.anilist.co"),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({"query": query, "variables": variables}),
-    );
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return parseMangaData([data['data']['Media']]).first;
-    } else {
-      throw Exception("Failed to load manga details");
-    }
+    return await getMangaDetailsMangaDex(id);
   }
 
+  // Get web novels/light novels using MangaDex
   Future<List<MangaClass>> getWebNovels({
     int page = 1,
     int perpage = 5,
     String? sort,
     String? source,
   }) async {
-    var query =
-        'query (\$page: Int, \$size: Int, \$type: MediaType, \$source: MediaSource, \$sort: [MediaSort] = [POPULARITY_DESC, SCORE_DESC]) {Page(page: \$page, perPage: \$size) {pageInfo {total perPage currentPage lastPage hasNextPage} media(type: \$type, source: \$source, sort: \$sort) {id idMal status(version: 2) title { userPreferred romaji english native } bannerImage popularity coverImage{extraLarge large medium color} episodes format season description seasonYear chapters volumes averageScore genres nextAiringEpisode {airingAt timeUntilAiring episode }}}}';
-    final variables = {
-      "page": page,
-      "size": perpage,
-      "type": "MANGA",
-      "source": source,
-      "sort": sort != null ? [sort] : ["POPULARITY_DESC", "SCORE_DESC"],
-    };
-    final response = await http.post(
-      Uri.parse("https://graphql.anilist.co"),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
+    await _throttleMangaDexRequest();
+    
+    final offset = (page - 1) * perpage;
+    
+    // Map sort options
+    Map<String, String> orderParams = {};
+    if (sort != null) {
+      switch (sort.toUpperCase()) {
+        case 'POPULARITY_DESC':
+          orderParams['order[followedCount]'] = 'desc';
+          break;
+        case 'SCORE_DESC':
+        case 'RATING_DESC':
+          orderParams['order[rating]'] = 'desc';
+          break;
+        default:
+          orderParams['order[followedCount]'] = 'desc';
+      }
+    } else {
+      orderParams['order[followedCount]'] = 'desc';
+    }
+
+    final uri = Uri.parse('$_mangaDexBaseUrl/manga').replace(
+      queryParameters: {
+        'limit': perpage.toString(),
+        'offset': offset.toString(),
+        ...orderParams,
+        'includes[]': ['cover_art', 'author'],
+        'contentRating[]': ['safe', 'suggestive'],
+        'publicationDemographic[]': ['none', 'shounen', 'shoujo', 'seinen', 'josei'],
+        'hasAvailableChapters': 'true',
       },
-      body: jsonEncode({"query": query, "variables": variables}),
     );
-    print("Response status: ${response.body}");
+
+    final response = await http.get(
+      uri,
+      headers: {'Accept': 'application/json'},
+    );
+
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      return parseMangaData(data['data']['Page']['media']);
+      return parseMangaDexData(data['data']);
     } else {
-      throw Exception("Failed to load web novels");
+      throw Exception("Failed to load web novels from MangaDex: ${response.statusCode}");
     }
   }
 
+  // Search manga using MangaDex
   Future<List<MangaClass>> searchManga({
     String? query,
     int page = 1,
@@ -236,299 +621,34 @@ class Api {
     List<String>? tags,
     List<String>? excludedTags,
   }) async {
-    // Apply rate limiting specifically for search requests
-    await _throttleSearchRequest();
-
-    // Build dynamic query variables and parameters based on what's provided
-    List<String> queryParams = [
-      '\$page: Int = 1',
-      '\$size: Int',
-      '\$type: MediaType',
-      '\$isAdult: Boolean = false',
-      '\$sort: [MediaSort] = [POPULARITY_DESC, SCORE_DESC]',
-    ];
-
-    List<String> mediaParams = [
-      'type: \$type',
-      'isAdult: \$isAdult',
-      'sort: \$sort',
-    ];
-
-    Map<String, dynamic> variables = {
-      "page": page,
-      "size": perPage,
-      "type": "MANGA",
-      "isAdult": isAdult,
-    };
-
-    if (query != null && query.isNotEmpty) {
-      queryParams.add('\$search: String');
-      mediaParams.add('search: \$search');
-      variables["search"] = query;
-    }
-
-    if (source != null && source.isNotEmpty) {
-      queryParams.add('\$source: MediaSource');
-      mediaParams.add('source: \$source');
-      variables["source"] = source;
-    }
-
-    if (format != null && format.isNotEmpty) {
-      queryParams.add('\$format: [MediaFormat]');
-      mediaParams.add('format_in: \$format');
-      variables["format"] = format;
-    }
-
-    if (genre != null && genre.isNotEmpty) {
-      queryParams.add('\$genres: [String]');
-      mediaParams.add('genre_in: \$genres');
-      variables["genres"] = genre;
-    }
-
-    if (excludedGenres != null && excludedGenres.isNotEmpty) {
-      queryParams.add('\$excludedGenres: [String]');
-      mediaParams.add('genre_not_in: \$excludedGenres');
-      variables["excludedGenres"] = excludedGenres;
-    }
-
-    if (status != null && status.isNotEmpty) {
-      queryParams.add('\$status: MediaStatus');
-      mediaParams.add('status: \$status');
-      variables["status"] = status;
-    }
-
+    // Map country codes to MangaDex language codes
+    String? originalLanguage;
     if (countryOfOrigin != null && countryOfOrigin.isNotEmpty) {
-      queryParams.add('\$countryOfOrigin: CountryCode');
-      mediaParams.add('countryOfOrigin: \$countryOfOrigin');
-      variables["countryOfOrigin"] = countryOfOrigin;
+      final languageMap = {
+        'JP': 'ja',
+        'KR': 'ko',
+        'CN': 'zh',
+        'TW': 'zh-hk',
+      };
+      originalLanguage = languageMap[countryOfOrigin.toUpperCase()];
     }
 
-    if (seasonYear != null) {
-      queryParams.add('\$seasonYear: Int');
-      mediaParams.add('seasonYear: \$seasonYear');
-      variables["seasonYear"] = seasonYear;
-    }
-
-    if (season != null && season.isNotEmpty) {
-      queryParams.add('\$season: MediaSeason');
-      mediaParams.add('season: \$season');
-      variables["season"] = season;
-    }
-
-    if (isLicensed != null) {
-      queryParams.add('\$isLicensed: Boolean');
-      mediaParams.add('isLicensed: \$isLicensed');
-      variables["isLicensed"] = isLicensed;
-    }
-
-    if (tags != null && tags.isNotEmpty) {
-      queryParams.add('\$tags: [String]');
-      mediaParams.add('tag_in: \$tags');
-      variables["tags"] = tags;
-    }
-
-    if (excludedTags != null && excludedTags.isNotEmpty) {
-      queryParams.add('\$excludedTags: [String]');
-      mediaParams.add('tag_not_in: \$excludedTags');
-      variables["excludedTags"] = excludedTags;
-    }
-
-    if (sort != null && sort.isNotEmpty) {
-      variables["sort"] = [sort];
-    } else {
-      variables["sort"] = ["POPULARITY_DESC", "SCORE_DESC"];
-    }
-
-    // Build the dynamic query string
-    var queryString = '''
-      query (${queryParams.join(', ')}) {
-        Page(page: \$page, perPage: \$size) {
-          pageInfo {
-            total
-            perPage
-            currentPage
-            lastPage
-            hasNextPage
-          }
-          media(${mediaParams.join(', ')}) {
-            id
-            idMal
-            status(version: 2)
-            title {
-              userPreferred
-              romaji
-              english
-              native
-            }
-            bannerImage
-            popularity
-            coverImage {
-              extraLarge
-              large
-              medium
-              color
-            }
-            episodes
-            format
-            season
-            description
-            seasonYear
-            chapters
-            volumes
-            averageScore
-            genres
-            nextAiringEpisode {
-              airingAt
-              timeUntilAiring
-              episode
-            }
-          }
-        }
-      }
-    ''';
-
-    print("Generated query: $queryString");
-
-    int retryCount = 0;
-    const maxRetries = 3;
-
-    while (retryCount < maxRetries) {
-      try {
-        final response = await http
-            .post(
-              Uri.parse("https://graphql.anilist.co"),
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-              },
-              body: jsonEncode({"query": queryString, "variables": variables}),
-            )
-            .timeout(Duration(seconds: 30));
-
-        print("Response body: ${response.body}");
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-
-          // Check for GraphQL errors
-          if (data['errors'] != null) {
-            print("GraphQL Error: ${data['errors']}");
-            throw Exception("GraphQL Error: ${data['errors']}");
-          }
-
-          return parseMangaData(data['data']['Page']['media']);
-        } else if (response.statusCode == 429) {
-          // Rate limited - wait and retry
-          retryCount++;
-          final waitTime = Duration(seconds: retryCount * 3); // 3s, 6s, 9s
-          print(
-            "Rate limited (429), waiting ${waitTime.inSeconds} seconds before retry $retryCount/$maxRetries",
-          );
-          await Future.delayed(waitTime);
-          continue;
-        } else if (response.statusCode >= 500) {
-          // Server error - retry
-          retryCount++;
-          if (retryCount >= maxRetries) {
-            throw Exception(
-              "Server error after $maxRetries retries: ${response.statusCode}",
-            );
-          }
-          print(
-            "Server error (${response.statusCode}), retrying in ${retryCount * 2} seconds",
-          );
-          await Future.delayed(Duration(seconds: retryCount * 2));
-          continue;
-        } else {
-          print("Response body: ${response.body}");
-          throw Exception("Failed to search manga: ${response.statusCode}");
-        }
-      } catch (e) {
-        if (e.toString().contains('TimeoutException')) {
-          retryCount++;
-          if (retryCount >= maxRetries) {
-            throw Exception("Request timeout after $maxRetries retries");
-          }
-          print("Request timeout, retrying in ${retryCount * 2} seconds");
-          await Future.delayed(Duration(seconds: retryCount * 2));
-          continue;
-        } else {
-          // Re-throw other errors immediately
-          throw e;
-        }
-      }
-    }
-
-    throw Exception("Max retries exceeded");
+    return await searchMangaDex(
+      query: query,
+      page: page,
+      perPage: perPage,
+      status: status,
+      originalLanguage: originalLanguage,
+      orderBy: sort,
+      contentRating: isAdult ? 'erotica' : null,
+    );
   }
 
+  // Note: MangaDex doesn't have character info like AniList
+  // This method returns a placeholder or throws an error
   Future<CharacterClass> getCharacterInfo(String characterId) async {
-    var query = '''
-      query (\$id: Int) {
-        Character(id: \$id) {
-          id
-          name {
-            first
-            middle
-            last
-            full
-            native
-            userPreferred
-            alternative
-          }
-          image {
-            large
-            medium
-          }
-          description
-          gender
-          bloodType
-          age
-        }
-      }
-    ''';
-
-    final variables = {"id": int.parse(characterId)};
-    final response = await http.post(
-      Uri.parse("https://graphql.anilist.co"),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({"query": query, "variables": variables}),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final character = data['data']['Character'];
-
-      return CharacterClass(
-        id: character['id'],
-        name: CharacterName(
-          first: character['name']['first'] ?? '',
-          name:
-              character['name']['full'] ??
-              character['name']['userPreferred'] ??
-              '',
-          middle: character['name']['middle'] ?? '',
-          last: character['name']['last'] ?? '',
-          userPreferred:
-              character['name']['userPreferred'] ??
-              character['name']['full'] ??
-              '',
-          alternative:
-              character['name']['alternative'] != null
-                  ? List<String>.from(character['name']['alternative'])
-                  : [],
-        ),
-        age: character['age']?.toString() ?? 'Unknown',
-        imageUrl:
-            character['image']['large'] ?? character['image']['medium'] ?? '',
-        gender: character['gender'] ?? 'Unknown',
-        bloodType: character['bloodType'] ?? 'Unknown',
-      );
-    } else {
-      throw Exception("Failed to load character info");
-    }
+    // MangaDex doesn't have a character API like AniList
+    // Return a basic placeholder or throw an exception
+    throw Exception("Character info is not available from MangaDex API");
   }
 }

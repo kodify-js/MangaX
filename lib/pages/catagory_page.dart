@@ -1,6 +1,8 @@
 import 'package:mangax/api/api.dart';
 import 'package:mangax/pages/infopage.dart';
 import 'package:mangax/Classes/manga_class.dart';
+import 'package:mangax/widgets/cached_image.dart';
+import 'package:mangax/widgets/skeleton_loaders.dart';
 import 'package:flutter/material.dart';
 
 class CatagoryPage extends StatefulWidget {
@@ -143,7 +145,7 @@ class _CatagoryPageState extends State<CatagoryPage> {
                 onRefresh: _refreshData,
                 child:
                     mangaList.isEmpty && isLoading
-                        ? Center(child: CircularProgressIndicator())
+                        ? const GridSkeleton(itemCount: 9)
                         : mangaList.isEmpty
                         ? Center(
                           child: Column(
@@ -197,60 +199,11 @@ class _CatagoryPageState extends State<CatagoryPage> {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Expanded(
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(8.0),
-                                              color: Colors.grey[300],
-                                            ),
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(8.0),
-                                              child: Image.network(
-                                                manga.coverImage!,
-                                                fit: BoxFit.cover,
-                                                width: double.infinity,
-                                                errorBuilder: (
-                                                  context,
-                                                  error,
-                                                  stackTrace,
-                                                ) {
-                                                  return Container(
-                                                    color: Colors.grey[300],
-                                                    child: Icon(
-                                                      Icons.broken_image,
-                                                      color: Colors.grey[600],
-                                                      size: 40,
-                                                    ),
-                                                  );
-                                                },
-                                                loadingBuilder: (
-                                                  context,
-                                                  child,
-                                                  loadingProgress,
-                                                ) {
-                                                  if (loadingProgress == null)
-                                                    return child;
-                                                  return Container(
-                                                    color: Colors.grey[200],
-                                                    child: Center(
-                                                      child: CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        value:
-                                                            loadingProgress
-                                                                        .expectedTotalBytes !=
-                                                                    null
-                                                                ? loadingProgress
-                                                                        .cumulativeBytesLoaded /
-                                                                    loadingProgress
-                                                                        .expectedTotalBytes!
-                                                                : null,
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ),
+                                          child: CachedImage(
+                                            imageUrl: manga.coverImage ?? '',
+                                            fit: BoxFit.cover,
+                                            width: double.infinity,
+                                            borderRadius: BorderRadius.circular(8.0),
                                           ),
                                         ),
                                         SizedBox(height: 8.0),
