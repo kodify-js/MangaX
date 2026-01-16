@@ -1,17 +1,34 @@
+import 'dart:math';
+
+import 'package:html/parser.dart';
+
 import '../../Classes/chapters_class.dart';
 import 'base_provider.dart';
+import 'package:http/http.dart' as http;
 
 class MangaKakalot extends MangaProvider {
   @override
   String get name => 'MangaKakalot';
 
   @override
-  String get baseUrl => 'https://mangakakalot.com';
+  String get baseUrl => 'https://www.mangakakalot.gg/';
 
   @override
   Future searchManga(String query) async {
-    // This is a placeholder implementation
-    // In a real implementation, you would make actual API calls to MangaKakalot
+    // https://www.mangakakalot.gg/search/story/{name}
+    final response = await http.get(Uri.parse('$baseUrl/search/story/$query'));
+    final document = parse(response.body);
+    document.querySelectorAll("div.panel_story_list div.story_item").map((element) {
+      final titleElement = element.querySelector('h3.story_name a');
+      final title = titleElement?.text.trim() ?? 'No Title';
+      final url = titleElement?.attributes['href'] ?? '';
+      final id = url.split('/').last;
+      return {
+        'id': id,
+        'title': title,
+        'url': url,
+      };
+    }).toList();
     throw UnimplementedError('MangaKakalot search not implemented yet');
   }
 
@@ -21,37 +38,52 @@ class MangaKakalot extends MangaProvider {
     int offset = 0,
     String? language,
   }) async {
-    // This is a placeholder implementation
-    // In a real implementation, you would make actual API calls to MangaKakalot
-    // For now, return some dummy data to demonstrate the provider switching
-    await Future.delayed(const Duration(seconds: 2)); // Simulate network delay
-
-    return List.generate(10, (index) {
+    final response = await http.get(Uri.parse('$baseUrl/manga/$mangaId'));
+    final document = parse(response.body);
+    final chapterElements = document.querySelectorAll('div.chapter-list div.row span a').map((element) {
+      final chapterName = element.text.trim();
+      final chapterUrl = element.attributes['href'] ?? '';
+      final chapterId = chapterUrl.split('/').last;
       return ChaptersClass(
-        chapterName: '${index + 1}',
-        chapterId: 'mk_${mangaId}_chapter_${index + 1}',
-        chapterUrl: '$baseUrl/manga/$mangaId/chapter-${index + 1}',
+        chapterName: chapterName,
+        chapterId: 'mk_$chapterId',
+        chapterUrl: chapterUrl,
         translatedLanguage: 'en',
       );
-    });
+    }).toList();
+    return chapterElements.toList();
+  }
+
+  //get best matching manga id from search and then get chapters
+
+  String getBestMatchingMangaId(List<dynamic> searchResults, String query) {
+    String lowerQuery = query.toLowerCase();
+    for (var result in searchResults) {
+      if (result['title'].toLowerCase() == lowerQuery) {
+        return result['id'];
+      }
+    }
+    // If no exact match, return the first result
+    return searchResults.isNotEmpty ? searchResults[0]['id'] : '';
   }
 
   @override
   Future<List<ChaptersClass>> getChapters(String query, {String? language}) async {
-    // This is a placeholder implementation
-    // In a real implementation, you would search for manga first, then get chapters
-    return await getAllChapters('dummy_manga_id');
+    final searchResults = await searchManga(query);
+    if (searchResults.isEmpty) {
+      return [];
+    }
+    final mangaId = getBestMatchingMangaId(searchResults, query);
+    return await getAllChapters(mangaId);
   }
 
   @override
   Future<List<String>> getChapterPages(String chapterId) async {
-    // Placeholder implementation - returns sample images
-    // In a real implementation, you would scrape the actual pages
-    await Future.delayed(const Duration(seconds: 1));
-    
-    // Return placeholder images for demo
-    return List.generate(5, (index) {
-      return 'https://via.placeholder.com/800x1200?text=Page+${index + 1}';
-    });
+    final response = await http.get(Uri.parse('$baseUrl/manga/$chapterId'));
+    final document = parse(response.body);
+    final pageElements = document.querySelectorAll('div.container-chapter-reader img').map((element) {
+      return element.attributes['src'] ?? '';
+    }).toList();
+    return pageElements;
   }
 }
