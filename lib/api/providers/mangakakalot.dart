@@ -11,14 +11,15 @@ class MangaKakalot extends MangaProvider {
   String get name => 'MangaKakalot';
 
   @override
-  String get baseUrl => 'https://www.mangakakalot.gg/';
+  String get baseUrl => 'https://www.mangakakalove.com/';
 
   @override
   Future searchManga(String query) async {
-    // https://www.mangakakalot.gg/search/story/{name}
     final response = await http.get(Uri.parse('$baseUrl/search/story/$query'));
+    print(response.body);
     final document = parse(response.body);
-    document.querySelectorAll("div.panel_story_list div.story_item").map((element) {
+    final searchResults = document.querySelectorAll("div.panel_story_list div.story_item").map((element) {
+      print(element);
       final titleElement = element.querySelector('h3.story_name a');
       final title = titleElement?.text.trim() ?? 'No Title';
       final url = titleElement?.attributes['href'] ?? '';
@@ -29,7 +30,7 @@ class MangaKakalot extends MangaProvider {
         'url': url,
       };
     }).toList();
-    throw UnimplementedError('MangaKakalot search not implemented yet');
+    return searchResults;
   }
 
   @override
