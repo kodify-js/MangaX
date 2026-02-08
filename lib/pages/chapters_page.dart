@@ -159,7 +159,7 @@ class _ChaptersPageState extends State<ChaptersPage> with SingleTickerProviderSt
                         onTap: () {
                           Navigator.pop(bottomSheetContext);
                           if (widget.mangaId != null) {
-                            chaptersProvider.changeProvider(provider, widget.mangaId!);
+                            chaptersProvider.changeProvider(provider, widget.mangaTitle!);
                           }
                         },
                       ),
@@ -802,7 +802,7 @@ class _ChaptersPageState extends State<ChaptersPage> with SingleTickerProviderSt
                     ),
                     child: Center(
                       child: Text(
-                        '${chapter.chapterName ?? '?'}',
+                        'MX',
                         style: TextStyle(
                           color: colorScheme.onPrimary,
                           fontWeight: FontWeight.bold,
@@ -820,7 +820,7 @@ class _ChaptersPageState extends State<ChaptersPage> with SingleTickerProviderSt
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Chapter ${chapter.chapterName ?? 'Unknown'}',
+                          'Chapter ${chapter.chapterNumber ?? chapter.chapterName ?? 'Unknown'}',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,

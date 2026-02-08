@@ -32,9 +32,15 @@ class CachedImage extends StatelessWidget {
       return _buildErrorWidget(context);
     }
 
-    // Add headers for MangaDex CDN images
-    final Map<String, String> imageHeaders = headers ?? {};
-    if (imageUrl.contains('mangadex.org') || imageUrl.contains('uploads.mangadex.org')) {
+    // Start with provided headers or empty map
+    final Map<String, String> imageHeaders = Map<String, String>.from(
+      headers ?? {},
+    );
+
+    // Add headers for MangaDex CDN images if not already provided
+    if ((imageUrl.contains('mangadex.org') ||
+            imageUrl.contains('uploads.mangadex.org')) &&
+        !imageHeaders.containsKey('Referer')) {
       imageHeaders['Referer'] = 'https://mangadex.org/';
     }
 
@@ -45,16 +51,14 @@ class CachedImage extends StatelessWidget {
       fit: fit,
       httpHeaders: imageHeaders.isNotEmpty ? imageHeaders : null,
       placeholder: (context, url) => placeholder ?? _buildPlaceholder(context),
-      errorWidget: (context, url, error) => errorWidget ?? _buildErrorWidget(context),
+      errorWidget:
+          (context, url, error) => errorWidget ?? _buildErrorWidget(context),
       fadeInDuration: const Duration(milliseconds: 300),
       fadeOutDuration: const Duration(milliseconds: 300),
     );
 
     if (borderRadius != null) {
-      return ClipRRect(
-        borderRadius: borderRadius!,
-        child: imageWidget,
-      );
+      return ClipRRect(borderRadius: borderRadius!, child: imageWidget);
     }
 
     return imageWidget;
@@ -64,11 +68,7 @@ class CachedImage extends StatelessWidget {
     return Shimmer.fromColors(
       baseColor: Theme.of(context).colorScheme.surfaceContainerHighest,
       highlightColor: Theme.of(context).colorScheme.surfaceContainerLow,
-      child: Container(
-        width: width,
-        height: height,
-        color: Colors.white,
-      ),
+      child: Container(width: width, height: height, color: Colors.white),
     );
   }
 
@@ -126,28 +126,28 @@ class CachedDecorationImage extends StatelessWidget {
 
     return CachedNetworkImage(
       imageUrl: imageUrl,
-      imageBuilder: (context, imageProvider) => Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: imageProvider,
-            fit: fit,
-            alignment: alignment,
+      imageBuilder:
+          (context, imageProvider) => Container(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: imageProvider,
+                fit: fit,
+                alignment: alignment,
+              ),
+            ),
+            child: child,
           ),
-        ),
-        child: child,
-      ),
-      placeholder: (context, url) => Shimmer.fromColors(
-        baseColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-        highlightColor: Theme.of(context).colorScheme.surfaceContainerLow,
-        child: Container(
-          color: Colors.white,
-          child: child,
-        ),
-      ),
-      errorWidget: (context, url, error) => Container(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: child,
-      ),
+      placeholder:
+          (context, url) => Shimmer.fromColors(
+            baseColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+            highlightColor: Theme.of(context).colorScheme.surfaceContainerLow,
+            child: Container(color: Colors.white, child: child),
+          ),
+      errorWidget:
+          (context, url, error) => Container(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: child,
+          ),
     );
   }
 }

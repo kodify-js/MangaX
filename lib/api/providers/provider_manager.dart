@@ -4,8 +4,8 @@ import 'mangakakalot.dart';
 
 class ProviderManager {
   static final List<MangaProvider> _providers = [
-    Mangadex(),
     MangaKakalot(),
+    Mangadex(),
     // Add more providers here in the future
   ];
 

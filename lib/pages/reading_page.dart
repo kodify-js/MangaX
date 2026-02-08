@@ -26,38 +26,40 @@ class ReadingPage extends StatefulWidget {
   State<ReadingPage> createState() => _ReadingPageState();
 }
 
-class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin {
+class _ReadingPageState extends State<ReadingPage>
+    with TickerProviderStateMixin {
   // Chapter data for continuous reading
   final List<_ChapterData> _loadedChapters = [];
   List<String> _allPages = [];
-  
+
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
   bool _showControls = true;
-  
+
   late PageController _pageController;
   late ScrollController _scrollController;
   int _currentPage = 0;
   String _currentChapterName = '';
-  
+
   bool _isVerticalMode = true;
   late AnimationController _controlsAnimController;
   late Animation<double> _controlsAnimation;
-  
+
   // Zoom
-  final TransformationController _transformationController = TransformationController();
+  final TransformationController _transformationController =
+      TransformationController();
   double _currentZoom = 1.0;
-  
+
   // Auto-scroll
   bool _isAutoScrolling = false;
   Timer? _autoScrollTimer;
   double _autoScrollSpeed = 2.0;
-  
+
   // Progress
   double _readingProgress = 0.0;
   bool _isLoadingNextChapter = false;
-  
+
   // Settings
   bool _showSettings = false;
 
@@ -67,7 +69,7 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
     _pageController = PageController();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
-    
+
     _controlsAnimController = AnimationController(
       duration: const Duration(milliseconds: 200),
       vsync: this,
@@ -76,9 +78,9 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
       CurvedAnimation(parent: _controlsAnimController, curve: Curves.easeInOut),
     );
     _controlsAnimController.forward();
-    
+
     _currentChapterName = widget.chapterName;
-    
+
     _loadInitialChapter();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
@@ -96,16 +98,17 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
 
   void _onScroll() {
     if (!_scrollController.hasClients || _allPages.isEmpty) return;
-    
+
     final maxScroll = _scrollController.position.maxScrollExtent;
     final currentScroll = _scrollController.offset;
-    
+
     setState(() {
-      _readingProgress = maxScroll > 0 ? (currentScroll / maxScroll).clamp(0.0, 1.0) : 0.0;
+      _readingProgress =
+          maxScroll > 0 ? (currentScroll / maxScroll).clamp(0.0, 1.0) : 0.0;
     });
-    
+
     _updateCurrentPageFromScroll();
-    
+
     // Load next chapter when near end (90%)
     if (currentScroll > maxScroll * 0.9 && !_isLoadingNextChapter) {
       _loadNextChapterContinuous();
@@ -114,12 +117,15 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
 
   void _updateCurrentPageFromScroll() {
     if (!_scrollController.hasClients || _allPages.isEmpty) return;
-    
-    final scrollFraction = _scrollController.offset / 
+
+    final scrollFraction =
+        _scrollController.offset /
         (_scrollController.position.maxScrollExtent.clamp(1, double.infinity));
     final estimatedPage = (scrollFraction * _allPages.length).floor();
-    
-    if (estimatedPage != _currentPage && estimatedPage >= 0 && estimatedPage < _allPages.length) {
+
+    if (estimatedPage != _currentPage &&
+        estimatedPage >= 0 &&
+        estimatedPage < _allPages.length) {
       setState(() {
         _currentPage = estimatedPage;
         _updateCurrentChapterFromPage();
@@ -156,7 +162,7 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
         chapterIndex: widget.currentIndex ?? 0,
         pages: pages,
       );
-      
+
       setState(() {
         _loadedChapters.add(chapterData);
         _allPages = pages;
@@ -174,25 +180,25 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
   Future<void> _loadNextChapterContinuous() async {
     if (_isLoadingNextChapter) return;
     if (widget.allChapterIds == null || _loadedChapters.isEmpty) return;
-    
+
     final lastChapter = _loadedChapters.last;
     final nextIndex = lastChapter.chapterIndex - 1;
-    
+
     if (nextIndex < 0 || nextIndex >= widget.allChapterIds!.length) return;
-    
+
     setState(() => _isLoadingNextChapter = true);
 
     try {
       final nextChapterId = widget.allChapterIds![nextIndex];
       final pages = await widget.provider.getChapterPages(nextChapterId);
-      
+
       final chapterData = _ChapterData(
         chapterId: nextChapterId,
         chapterName: '${nextIndex + 1}',
         chapterIndex: nextIndex,
         pages: pages,
       );
-      
+
       setState(() {
         _loadedChapters.add(chapterData);
         _allPages = _loadedChapters.expand((c) => c.pages).toList();
@@ -223,12 +229,14 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
   void _startAutoScroll() {
     if (_isAutoScrolling || !_isVerticalMode) return;
     setState(() => _isAutoScrolling = true);
-    
-    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+
+    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (
+      timer,
+    ) {
       if (!_scrollController.hasClients) return;
       final maxScroll = _scrollController.position.maxScrollExtent;
       final currentScroll = _scrollController.offset;
-      
+
       if (currentScroll < maxScroll) {
         _scrollController.jumpTo(currentScroll + _autoScrollSpeed);
       } else {
@@ -279,7 +287,7 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -292,11 +300,12 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
           else
             GestureDetector(
               onTap: _toggleControls,
-              child: _isVerticalMode
-                  ? _buildVerticalReader()
-                  : _buildHorizontalReader(),
+              child:
+                  _isVerticalMode
+                      ? _buildVerticalReader()
+                      : _buildHorizontalReader(),
             ),
-          
+
           // Top Controls
           if (!_isLoading && !_hasError)
             AnimatedBuilder(
@@ -316,7 +325,7 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                 );
               },
             ),
-          
+
           // Progress bar (always visible when controls hidden)
           if (!_isLoading && !_hasError)
             Positioned(
@@ -331,12 +340,14 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                   child: LinearProgressIndicator(
                     value: _readingProgress,
                     backgroundColor: Colors.white.withOpacity(0.2),
-                    valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      colorScheme.primary,
+                    ),
                   ),
                 ),
               ),
             ),
-          
+
           // Bottom Controls
           if (!_isLoading && !_hasError)
             AnimatedBuilder(
@@ -356,11 +367,10 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                 );
               },
             ),
-          
+
           // Settings Panel
-          if (_showSettings && _showControls)
-            _buildSettingsPanel(colorScheme),
-          
+          if (_showSettings && _showControls) _buildSettingsPanel(colorScheme),
+
           // Loading next chapter indicator
           if (_isLoadingNextChapter)
             Positioned(
@@ -369,7 +379,10 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
               right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.8),
                     borderRadius: BorderRadius.circular(25),
@@ -395,14 +408,17 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                 ),
               ),
             ),
-          
+
           // Auto-scroll indicator
           if (_isAutoScrolling)
             Positioned(
               top: 100,
               right: 16,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: colorScheme.primary.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(20),
@@ -410,11 +426,19 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
+                    const Icon(
+                      Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       'Auto ${_autoScrollSpeed.toStringAsFixed(1)}x',
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -437,20 +461,21 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
       },
       child: ListView.builder(
         controller: _scrollController,
-        physics: _currentZoom > 1.0 ? const NeverScrollableScrollPhysics() : null,
+        physics:
+            _currentZoom > 1.0 ? const NeverScrollableScrollPhysics() : null,
         itemCount: _allPages.length + _loadedChapters.length - 1,
         itemBuilder: (context, index) {
           // Check if this is a chapter divider
           int pageIndex = index;
           int pagesBeforeThis = 0;
-          
+
           for (int i = 0; i < _loadedChapters.length; i++) {
             if (i > 0 && index == pagesBeforeThis + i - 1) {
               return _buildChapterDivider(_loadedChapters[i]);
             }
             pagesBeforeThis += _loadedChapters[i].pages.length;
           }
-          
+
           // Calculate actual page index
           int dividersBeforeThis = 0;
           int runningCount = 0;
@@ -460,11 +485,11 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
             if (index - dividersBeforeThis < runningCount) break;
           }
           pageIndex = index - dividersBeforeThis;
-          
+
           if (pageIndex < 0 || pageIndex >= _allPages.length) {
             return const SizedBox.shrink();
           }
-          
+
           return Padding(
             padding: const EdgeInsets.only(bottom: 2),
             child: CachedImage(
@@ -472,6 +497,7 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
               fit: BoxFit.fitWidth,
               width: double.infinity,
               placeholder: _buildPagePlaceholder(pageIndex),
+              headers: widget.provider.getImageHeaders(_allPages[pageIndex]),
             ),
           );
         },
@@ -493,14 +519,21 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
           ],
         ),
         border: Border.symmetric(
-          horizontal: BorderSide(color: colorScheme.primary.withOpacity(0.5), width: 1),
+          horizontal: BorderSide(
+            color: colorScheme.primary.withOpacity(0.5),
+            width: 1,
+          ),
         ),
       ),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.auto_stories_rounded, color: colorScheme.primary, size: 28),
+            Icon(
+              Icons.auto_stories_rounded,
+              color: colorScheme.primary,
+              size: 28,
+            ),
             const SizedBox(height: 8),
             Text(
               'Chapter ${chapter.chapterName}',
@@ -512,7 +545,10 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
             ),
             Text(
               '${chapter.pages.length} pages',
-              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -535,10 +571,7 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
             const SizedBox(height: 12),
             Text(
               'Loading page ${index + 1}...',
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),
           ],
         ),
@@ -553,10 +586,13 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
       onPageChanged: (index) {
         setState(() {
           _currentPage = index;
-          _readingProgress = _allPages.isNotEmpty ? index / (_allPages.length - 1).clamp(1, double.infinity) : 0;
+          _readingProgress =
+              _allPages.isNotEmpty
+                  ? index / (_allPages.length - 1).clamp(1, double.infinity)
+                  : 0;
           _updateCurrentChapterFromPage();
         });
-        
+
         // Load next chapter when near end
         if (index > _allPages.length - 3 && !_isLoadingNextChapter) {
           _loadNextChapterContinuous();
@@ -569,7 +605,8 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
           maxScale: 4.0,
           onInteractionEnd: (details) {
             setState(() {
-              _currentZoom = _transformationController.value.getMaxScaleOnAxis();
+              _currentZoom =
+                  _transformationController.value.getMaxScaleOnAxis();
             });
           },
           child: Center(
@@ -577,6 +614,7 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
               imageUrl: _allPages[index],
               fit: BoxFit.contain,
               placeholder: _buildPagePlaceholder(index),
+              headers: widget.provider.getImageHeaders(_allPages[index]),
             ),
           ),
         );
@@ -590,10 +628,7 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            Colors.black.withOpacity(0.9),
-            Colors.transparent,
-          ],
+          colors: [Colors.black.withOpacity(0.9), Colors.transparent],
         ),
       ),
       child: SafeArea(
@@ -618,7 +653,10 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                     if (widget.mangaTitle != null)
                       Text(
                         widget.mangaTitle!,
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -639,14 +677,21 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
               if (_currentZoom > 1.0)
                 Container(
                   margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.primary,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     '${_currentZoom.toStringAsFixed(1)}x',
-                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               // Settings
@@ -669,7 +714,11 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: IconButton(
-                  icon: Icon(_isVerticalMode ? Icons.swap_horiz_rounded : Icons.swap_vert_rounded),
+                  icon: Icon(
+                    _isVerticalMode
+                        ? Icons.swap_horiz_rounded
+                        : Icons.swap_vert_rounded,
+                  ),
                   color: Colors.white,
                   onPressed: () {
                     setState(() {
@@ -692,10 +741,7 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
         gradient: LinearGradient(
           begin: Alignment.bottomCenter,
           end: Alignment.topCenter,
-          colors: [
-            Colors.black.withOpacity(0.95),
-            Colors.transparent,
-          ],
+          colors: [Colors.black.withOpacity(0.95), Colors.transparent],
         ),
       ),
       child: SafeArea(
@@ -712,7 +758,10 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(20),
@@ -722,22 +771,34 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                         children: [
                           Text(
                             '${_currentPage + 1}',
-                            style: TextStyle(color: colorScheme.primary, fontSize: 16, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              color: colorScheme.primary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           Text(
                             ' / ${_allPages.length}',
-                            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 16),
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.6),
+                              fontSize: 16,
+                            ),
                           ),
                           if (_loadedChapters.length > 1) ...[
                             Container(
                               width: 1,
                               height: 16,
-                              margin: const EdgeInsets.symmetric(horizontal: 12),
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
                               color: Colors.white.withOpacity(0.3),
                             ),
                             Text(
                               '${_loadedChapters.length} ch',
-                              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.5),
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ],
@@ -746,7 +807,7 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                   ],
                 ),
               ),
-              
+
               // Progress slider
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
@@ -767,21 +828,25 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                       if (_isVerticalMode) {
                         _jumpToProgress(value);
                       } else {
-                        final pageIndex = (value * (_allPages.length - 1)).round();
+                        final pageIndex =
+                            (value * (_allPages.length - 1)).round();
                         _pageController.jumpToPage(pageIndex);
                       }
                     },
                   ),
                 ),
               ),
-              
+
               // Action buttons
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   if (_isVerticalMode)
                     _buildActionButton(
-                      icon: _isAutoScrolling ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      icon:
+                          _isAutoScrolling
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
                       label: _isAutoScrolling ? 'Stop' : 'Auto',
                       enabled: true,
                       onPressed: _toggleAutoScroll,
@@ -798,7 +863,10 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                     ),
                   if (_currentZoom == 1.0)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
@@ -806,11 +874,18 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.pinch_rounded, color: Colors.white.withOpacity(0.5), size: 20),
+                          Icon(
+                            Icons.pinch_rounded,
+                            color: Colors.white.withOpacity(0.5),
+                            size: 20,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             'Pinch to zoom',
-                            style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.5),
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -839,23 +914,41 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            color: isActive 
-                ? colorScheme.primary 
-                : (enabled ? colorScheme.primary.withOpacity(0.2) : Colors.white.withOpacity(0.1)),
+            color:
+                isActive
+                    ? colorScheme.primary
+                    : (enabled
+                        ? colorScheme.primary.withOpacity(0.2)
+                        : Colors.white.withOpacity(0.1)),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isActive ? colorScheme.primary : (enabled ? colorScheme.primary.withOpacity(0.5) : Colors.transparent),
+              color:
+                  isActive
+                      ? colorScheme.primary
+                      : (enabled
+                          ? colorScheme.primary.withOpacity(0.5)
+                          : Colors.transparent),
             ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: isActive ? Colors.white : (enabled ? colorScheme.primary : Colors.white54), size: 22),
+              Icon(
+                icon,
+                color:
+                    isActive
+                        ? Colors.white
+                        : (enabled ? colorScheme.primary : Colors.white54),
+                size: 22,
+              ),
               const SizedBox(height: 2),
               Text(
                 label,
                 style: TextStyle(
-                  color: isActive ? Colors.white : (enabled ? Colors.white70 : Colors.white38),
+                  color:
+                      isActive
+                          ? Colors.white
+                          : (enabled ? Colors.white70 : Colors.white38),
                   fontSize: 10,
                   fontWeight: FontWeight.w500,
                 ),
@@ -881,7 +974,11 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.white.withOpacity(0.1)),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20, offset: const Offset(0, 10)),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
             ],
           ),
           child: Column(
@@ -890,16 +987,30 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
             children: [
               Row(
                 children: [
-                  Icon(Icons.tune_rounded, color: colorScheme.primary, size: 20),
+                  Icon(
+                    Icons.tune_rounded,
+                    color: colorScheme.primary,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
-                  const Text('Reading Settings', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Reading Settings',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
-              
+
               // Auto-scroll speed
               if (_isVerticalMode) ...[
-                const Text('Auto-scroll Speed', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                const Text(
+                  'Auto-scroll Speed',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -916,18 +1027,29 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                           min: 0.5,
                           max: 5.0,
                           divisions: 9,
-                          onChanged: (value) => setState(() => _autoScrollSpeed = value),
+                          onChanged:
+                              (value) =>
+                                  setState(() => _autoScrollSpeed = value),
                         ),
                       ),
                     ),
-                    Text('${_autoScrollSpeed.toStringAsFixed(1)}x', style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold)),
+                    Text(
+                      '${_autoScrollSpeed.toStringAsFixed(1)}x',
+                      style: TextStyle(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
               ],
-              
+
               // Zoom
-              const Text('Zoom Level', style: TextStyle(color: Colors.white70, fontSize: 12)),
+              const Text(
+                'Zoom Level',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -952,7 +1074,8 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                         onChanged: (value) {
                           setState(() {
                             _currentZoom = value;
-                            _transformationController.value = Matrix4.identity()..scale(_currentZoom);
+                            _transformationController.value =
+                                Matrix4.identity()..scale(_currentZoom);
                           });
                         },
                       ),
@@ -968,17 +1091,28 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
               Center(
                 child: TextButton(
                   onPressed: _resetZoom,
-                  child: Text('Reset (${_currentZoom.toStringAsFixed(1)}x)', style: TextStyle(color: colorScheme.primary)),
+                  child: Text(
+                    'Reset (${_currentZoom.toStringAsFixed(1)}x)',
+                    style: TextStyle(color: colorScheme.primary),
+                  ),
                 ),
               ),
-              
+
               const Divider(color: Colors.white24),
-              
+
               // Reading mode
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(_isVerticalMode ? Icons.swap_vert_rounded : Icons.swap_horiz_rounded, color: colorScheme.primary),
-                title: Text(_isVerticalMode ? 'Vertical Scroll' : 'Horizontal Pages', style: const TextStyle(color: Colors.white)),
+                leading: Icon(
+                  _isVerticalMode
+                      ? Icons.swap_vert_rounded
+                      : Icons.swap_horiz_rounded,
+                  color: colorScheme.primary,
+                ),
+                title: Text(
+                  _isVerticalMode ? 'Vertical Scroll' : 'Horizontal Pages',
+                  style: const TextStyle(color: Colors.white),
+                ),
                 trailing: Switch(
                   value: _isVerticalMode,
                   onChanged: (value) {
@@ -990,14 +1124,21 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                   activeColor: colorScheme.primary,
                 ),
               ),
-              
+
               // Provider info
               const Divider(color: Colors.white24),
               Row(
                 children: [
-                  Icon(Icons.cloud_rounded, color: colorScheme.primary, size: 16),
+                  Icon(
+                    Icons.cloud_rounded,
+                    color: colorScheme.primary,
+                    size: 16,
+                  ),
                   const SizedBox(width: 8),
-                  Text('Source: ${widget.provider.name}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  Text(
+                    'Source: ${widget.provider.name}',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
                 ],
               ),
             ],
@@ -1097,7 +1238,10 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white.withOpacity(0.1),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -1111,7 +1255,10 @@ class _ReadingPageState extends State<ReadingPage> with TickerProviderStateMixin
                   style: ElevatedButton.styleFrom(
                     backgroundColor: colorScheme.primary,
                     foregroundColor: colorScheme.onPrimary,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),

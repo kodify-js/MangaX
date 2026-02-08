@@ -45,7 +45,7 @@ class ChaptersProvider extends ChangeNotifier {
       if (_currentProvider is Mangadex) {
         final mangadex = _currentProvider as Mangadex;
         mangadex.setLanguage(_selectedLanguage);
-        
+
         // First search to get the manga ID if we don't have it
         if (_currentMangaId == null) {
           final search = await mangadex.searchManga(name);
@@ -58,13 +58,48 @@ class ChaptersProvider extends ChangeNotifier {
           }
           _currentMangaId = search['data'][0]['id'];
         }
-        
+
         // Now load all chapters using the manga ID
-        _chapters = await mangadex.getAllChapters(_currentMangaId!, language: _selectedLanguage);
+        _chapters = await mangadex.getAllChapters(
+          _currentMangaId!,
+          language: _selectedLanguage,
+        );
       } else {
-        _chapters = await _currentProvider.getChapters(name, language: _selectedLanguage);
+        _chapters = await _currentProvider.getChapters(
+          name,
+          language: _selectedLanguage,
+        );
       }
-      
+
+      // If no chapters found and current provider is not MangaDex, fallback to MangaDex
+      if (_chapters.isEmpty && _currentProvider is! Mangadex) {
+        print(
+          'No chapters found with ${_currentProvider.name}, falling back to MangaDex',
+        );
+        final mangadexProvider = ProviderManager.getProviderByName('MangaDex');
+        if (mangadexProvider != null && mangadexProvider is Mangadex) {
+          final mangadex = mangadexProvider as Mangadex;
+          mangadex.setLanguage(_selectedLanguage);
+
+          final search = await mangadex.searchManga(name);
+          if (search['data'] != null && search['data'].isNotEmpty) {
+            _currentMangaId = search['data'][0]['id'];
+            _chapters = await mangadex.getAllChapters(
+              _currentMangaId!,
+              language: _selectedLanguage,
+            );
+
+            // Only switch provider if we found chapters
+            if (_chapters.isNotEmpty) {
+              _currentProvider = mangadexProvider;
+              print(
+                'Successfully loaded ${_chapters.length} chapters from MangaDex',
+              );
+            }
+          }
+        }
+      }
+
       _totalChapters = _chapters.length;
       _loadedChapters = _chapters.length;
       _filterChapters();
@@ -80,13 +115,13 @@ class ChaptersProvider extends ChangeNotifier {
 
   Future<void> loadAvailableLanguages(String mangaTitle) async {
     if (_currentProvider is! Mangadex) return;
-    
+
     _isLoadingLanguages = true;
     notifyListeners();
 
     try {
       final mangadex = _currentProvider as Mangadex;
-      
+
       // First search to get the manga ID if we don't have it
       if (_currentMangaId == null) {
         final search = await mangadex.searchManga(mangaTitle);
@@ -94,18 +129,24 @@ class ChaptersProvider extends ChangeNotifier {
           _currentMangaId = search['data'][0]['id'];
         }
       }
-      
+
       if (_currentMangaId != null) {
-        _availableLanguages = await mangadex.getAvailableLanguages(_currentMangaId!);
-        if (_availableLanguages.isNotEmpty && !_availableLanguages.contains(_selectedLanguage)) {
-          _selectedLanguage = _availableLanguages.contains('en') ? 'en' : _availableLanguages.first;
+        _availableLanguages = await mangadex.getAvailableLanguages(
+          _currentMangaId!,
+        );
+        if (_availableLanguages.isNotEmpty &&
+            !_availableLanguages.contains(_selectedLanguage)) {
+          _selectedLanguage =
+              _availableLanguages.contains('en')
+                  ? 'en'
+                  : _availableLanguages.first;
         }
       }
     } catch (e) {
       // Keep default language if loading fails
       _availableLanguages = {'en'};
     }
-    
+
     _isLoadingLanguages = false;
     notifyListeners();
   }
@@ -127,14 +168,17 @@ class ChaptersProvider extends ChangeNotifier {
 
   Future<void> _loadChaptersByMangaId(String mangaId) async {
     if (_currentProvider is! Mangadex) return;
-    
+
     _isLoading = true;
     _hasError = false;
     notifyListeners();
 
     try {
       final mangadex = _currentProvider as Mangadex;
-      _chapters = await mangadex.getAllChapters(mangaId, language: _selectedLanguage);
+      _chapters = await mangadex.getAllChapters(
+        mangaId,
+        language: _selectedLanguage,
+      );
       _totalChapters = _chapters.length;
       _loadedChapters = _chapters.length;
       _filterChapters();

@@ -80,14 +80,26 @@ class Api {
       final relationships = item['relationships'] as List? ?? [];
       
       // Get title (prefer English, fallback to other languages)
-      String title = '';
-      final titles = attributes['title'] as Map<String, dynamic>? ?? {};
+     String title = '';
+    final altTitles = attributes['altTitles'] as List? ?? [];
+    String? englishAltTitle;
+    for (var altTitle in altTitles) {
+      if (altTitle is Map && altTitle['en'] != null) {
+        englishAltTitle = altTitle['en'];
+        break;
+      }
+    }
+
+    if (englishAltTitle != null) {
+      title = englishAltTitle;
+    } else if (attributes['title'] != null) {
+      final titles = attributes['title'] as Map<String, dynamic>;
       title = titles['en'] ?? 
               titles['ja-ro'] ?? 
               titles['ja'] ?? 
               titles.values.firstOrNull?.toString() ?? 
               'Unknown Title';
-
+    }
       // Get description
       String description = '';
       final descriptions = attributes['description'] as Map<String, dynamic>? ?? {};
@@ -135,7 +147,6 @@ class Api {
 
       // Get alternate titles
       List<String> synonyms = [];
-      final altTitles = attributes['altTitles'] as List? ?? [];
       for (var altTitle in altTitles) {
         if (altTitle is Map) {
           synonyms.addAll(altTitle.values.map((e) => e.toString()));
