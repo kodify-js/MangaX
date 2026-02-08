@@ -440,8 +440,3 @@ This project is open source and available under the [MIT License](LICENSE).
 - Create an issue for bug reports or feature requests
 - Star ⭐ this repo if you find it useful!
 
----
-
-<p align="center">
-  Made with ❤️ using Flutter
-</p>
